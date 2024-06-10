@@ -1,0 +1,1 @@
+# module code for OpenAdmin
