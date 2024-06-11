@@ -46,6 +46,7 @@ import ssl
 read force http option from cpanel and set it
 
 - SSH
+first check in cpbackuo file "shell" to determine if user should have ssh access.
 check if user has ssh key pair, if he does copy and authorize
 enable ssh for that user: opencli user-ssh <check|enable|disable> <username>
 
