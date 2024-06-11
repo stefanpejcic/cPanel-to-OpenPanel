@@ -36,11 +36,12 @@ if not, add domain: opencli domains-add <DOMAIN> <username> *(path will be /home
 check if databases, then start mysql in container
 create databases
 create users
-assing users
+assing users using cpbackup file "mysql.sql" that hilds grants
 import dumps
 
 
 - SSL
+fist check if cpbackup file "has_sslstorage" exists, if not then no ssl.
 for each domain check validity and import if valid.
 import ssl 
 read force http option from cpanel and set it
