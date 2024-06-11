@@ -8,6 +8,12 @@ read plan limits
 check if plan already exists: opencli plan-list [--json]
 create plan: opencli plan-create plan_name description domains_limit websites_limit disk_limit inodes_limit db_limit cpu ram docker_image bandwidth storage_file
 
+- USER
+check if username already exists, create user with: opencli user-add <USERNAME> <PASSWORD|generate> <EMAIL> <PLAN_NAME>
+
+
+-DEDI IP
+check if user had dedicated ip and set dedi ip on openpnael: opencli user-ip <USERNAME> <IP>
 
 - PHP
 detect php version from the backup file
@@ -39,6 +45,11 @@ for each domain check validity and import if valid.
 import ssl 
 read force http option from cpanel and set it
 
+- SSH
+check if user has ssh key pair, if he does copy and authorize
+enable ssh for that user: opencli user-ssh <check|enable|disable> <username>
+
+
 
 - DNS
 check if zone is valid
@@ -50,9 +61,6 @@ update serial in zone
 - FILES
 cp the files for each domain document root to adequate folder
 
-
-- SSH
-check if ssh key, add it to our user then as well and authorize
 
 
 - WORDPRESS
