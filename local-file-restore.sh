@@ -1,5 +1,16 @@
 #!/bin/bash
 
+: '
+1. check if local/remote cpanel backup file exists and can be downloaded or server has enought disk to download adn unpack
+2. extract and run checks: if username already exists, domains..
+3. if all checks pass, lets start the import process and log to file per restore session
+4. actuall process
+5. cleanup
+6. optional steps: if api and live transfer is enabled, change dns on cpanel, suspend cp user, etc.
+'
+
+
+
 # Function to display usage
 usage() {
     echo "Usage: $0 --backup-location <path> --docker-image <image>"
@@ -90,6 +101,9 @@ while [ "$1" != "" ]; do
     shift
 done
 
+
+########### STEP 1. RUN CHECKS
+
 # Ensure all necessary parameters are provided
 if [ -z "$backup_location" ] || [ -z "$docker_image" ]; then
     usage
@@ -104,9 +118,23 @@ fi
 # Install required packages
 install_dependencies
 
+
+
+
+
+########### STEP 2. EXTRACT
+
+#todo: check available du and if username is available
+
 # Extract backup
 backup_dir="/tmp/backup_extract"
 extract_backup "$backup_location" "$backup_dir"
+
+
+
+
+
+########### STEP 3. START IMPORT
 
 # Parse cPanel metadata
 parse_cpanel_metadata "$backup_dir"
@@ -194,6 +222,8 @@ fi
 
 # Fix file permissions
 chown -R "$cpanel_username:$cpanel_username" "/home/$cpanel_username"
+
+########### STEP 4. CLEANUP
 
 # Cleanup
 rm -rf "$backup_dir"
