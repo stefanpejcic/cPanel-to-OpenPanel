@@ -1,13 +1,119 @@
 #!/bin/bash
 
 : '
-1. check if local/remote cpanel backup file exists and can be downloaded or server has enought disk to download adn unpack
-2. extract and run checks: if username already exists, domains..
-3. if all checks pass, lets start the import process and log to file per restore session
-4. actuall process
-5. cleanup
-6. optional steps: if api and live transfer is enabled, change dns on cpanel, suspend cp user, etc.
+SUPPORTED 
+
+- PLAN
+read plan limits
+check if plan already exists: opencli plan-list [--json]
+create plan: opencli plan-create plan_name description domains_limit websites_limit disk_limit inodes_limit db_limit cpu ram docker_image bandwidth storage_file
+
+
+- PHP
+detect php version from the backup file
+check if it is installed and set as default in docker container: opencli php-default_php_version <username>
+if not default, check if installed: opencli php-enabled_php_versions <username>
+if not installed, install it: opencli php-install_php_version <username> <php_version>
+and set as default: opencli php-enabled_php_versions --update <username>
+
+TODO in future: read .ini files or Cloudlinux settings of version per domain and if multiple versions, install and set for each domain same version: opencli php-domain_php <domain_name> --update <new_php_version>
+
+
+
+- DOMAINS
+check if domain already exists on server: opencli domains-whoowns <DOMAIN-NAME>
+if not, add domain: opencli domains-add <DOMAIN> <username> *(path will be /home/<username>/<DOMAIN>/)
+
+
+
+- MYSQL
+check if databases, then start mysql in container
+create databases
+create users
+assing users
+import dumps
+
+
+- SSL
+for each domain check validity and import if valid.
+import ssl 
+read force http option from cpanel and set it
+
+
+- DNS
+check if zone is valid
+copy zone
+change ns in zone
+update serial in zone
+
+
+- FILES
+cp the files for each domain document root to adequate folder
+
+
+- SSH
+check if ssh key, add it to our user then as well and authorize
+
+
+- WORDPRESS
+read wptoolkit/softaculous files and import the site in openpanel wpmanager
+
+
+- CRONS
+cp crontab file
+enable cron service in docker container
+
+
+
+
+
+
+
+
+
+
+
+
+
+FOR FUTURE
+
+- NODEJS/PYTHON APPS FROM CPANEL APPLICATION MANAGER
+if exist, check versions and conf: start file, .htacces proxy..
+install pm2 and needed py/node & pip/npm
+add in openpanel PM2 interface
+start app
+
+- GIT
+
+- EMAILS
+
+- IP BLOCKER
+
+- MODSEC ON/OFF STATUS OF DOMAIN
+
+- REDIRECTS
+
 '
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -222,6 +328,8 @@ fi
 
 # Fix file permissions
 chown -R "$cpanel_username:$cpanel_username" "/home/$cpanel_username"
+
+# for in contianer we will use: opencli files-fix_permissions [USERNAME] [PATH]
 
 ########### STEP 4. CLEANUP
 
