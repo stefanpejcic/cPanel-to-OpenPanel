@@ -1,4 +1,4 @@
-#!/bin/bash
+i#!/bin/bash
 
 : '
 SUPPORTED 
@@ -10,7 +10,7 @@ create plan: opencli plan-create plan_name description domains_limit websites_li
 
 - USER
 check if username already exists, create user with: opencli user-add <USERNAME> <PASSWORD|generate> <EMAIL> <PLAN_NAME>
-
+if user was suspended on cpanel, also suspend on openpanel AFTER WE FINISH ALL IMPORTS! opencli user-suspend <USERNAME>
 
 -DEDI IP
 check if user had dedicated ip and set dedi ip on openpnael: opencli user-ip <USERNAME> <IP>
