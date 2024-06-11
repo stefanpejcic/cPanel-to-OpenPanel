@@ -42,7 +42,7 @@ import dumps
 
 - SSL
 fist check if cpbackup file "has_sslstorage" exists, if not then no ssl.
-for each domain check validity and import if valid.
+then look in file "sslkeys" for keys and "sslcerts" and import if valid.
 import ssl 
 read force http option from cpanel and set it
 
@@ -54,6 +54,7 @@ enable ssh for that user: opencli user-ssh <check|enable|disable> <username>
 
 
 - DNS
+list files from cpanelbackup "dnszones" folder
 check if zone is valid
 copy zone
 change ns in zone
