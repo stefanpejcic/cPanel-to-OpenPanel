@@ -318,6 +318,8 @@ if [ -d "$backup_dir/ssl" ]; then
         openpanel ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
         check_success
     done
+# we can also try to generate free ssl for all domains owned by user with: opencli ssl-user <username>
+    
 fi
 
 # Restore Cron Jobs
