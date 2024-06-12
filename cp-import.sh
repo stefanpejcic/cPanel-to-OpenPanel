@@ -106,27 +106,7 @@ start app
 
 '
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#!/bin/bash
 
 # Function to display usage
 usage() {
@@ -201,13 +181,177 @@ parse_cpanel_metadata() {
     plan_cpu=$(grep -oP 'max_cpu: \K\S+' "$backup_dir"/metadata/account.yaml)
     plan_ram=$(grep -oP 'max_ram: \K\S+' "$backup_dir"/metadata/account.yaml)
     plan_portspeed=$(grep -oP 'max_portspeed: \K\S+' "$backup_dir"/metadata/account.yaml)
+    php_version=$(grep -oP 'php_version: \K\S+' "$backup_dir"/userdata/main)
+    suspended=$(grep -oP 'suspended: \K\S+' "$backup_dir"/metadata/account.yaml)
+}
+
+# Function to create or get plan
+create_or_get_plan() {
+    local plan_name="$1"
+    local plan_description="$2"
+    local plan_domains="$3"
+    local plan_websites="$4"
+    local plan_disk="$5"
+    local plan_inodes="$6"
+    local plan_databases="$7"
+    local plan_cpu="$8"
+    local plan_ram="$9"
+    local docker_image=${10}
+    local plan_portspeed=${11}
+
+    local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
+    if [ -z "$existing_plan" ]; then
+        opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" "$docker_image" "$plan_portspeed"
+        check_success
+    fi
+}
+
+# Function to create or get user
+create_or_get_user() {
+    local username="$1"
+    local password="$2"
+    local email="$3"
+    local plan_name="$4"
+
+    local existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$username\") | .id")
+    if [ -z "$existing_user" ]; then
+        opencli user-add "$username" "$password" "$email" "$plan_name"
+        check_success
+    fi
+}
+
+# Function to restore PHP version
+restore_php_version() {
+    local username="$1"
+    local php_version="$2"
+
+    local current_version=$(opencli php-default_php_version "$username")
+    if [ "$current_version" != "$php_version" ]; then
+        local installed_versions=$(opencli php-enabled_php_versions "$username")
+        if ! echo "$installed_versions" | grep -q "$php_version"; then
+            opencli php-install_php_version "$username" "$php_version"
+            check_success
+        fi
+        opencli php-enabled_php_versions --update "$username" "$php_version"
+        check_success
+    fi
+}
+
+# Function to restore domains
+restore_domains() {
+    local username="$1"
+    local domain="$2"
+    local path="$3"
+
+    local domain_owner=$(opencli domains-whoowns "$domain")
+    if [ -z "$domain_owner" ]; then
+        opencli domains-add "$domain" "$username" "$path"
+        check_success
+    fi
+}
+
+# Function to restore MySQL databases and users
+restore_mysql() {
+    local username="$1"
+    local password="$2"
+    local backup_dir="$3"
+
+    if [ -d "$backup_dir/mysql" ]; then
+        for db_file in "$backup_dir/mysql"/*.sql; do
+            local db_name=$(basename "$db_file" .sql)
+            openpanel db create "$db_name" "$username" "$password"
+            check_success
+            mysql -u "$username" -p"$password" "$db_name" < "$db_file"
+            check_success
+        done
+    fi
+}
+
+# Function to restore SSL certificates
+restore_ssl() {
+    local username="$1"
+    local backup_dir="$2"
+
+    if [ -d "$backup_dir/ssl" ]; then
+        for cert_file in "$backup_dir/ssl"/*.crt; do
+            local domain=$(basename "$cert_file" .crt)
+            local key_file="$backup_dir/ssl/$domain.key"
+            openpanel ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
+            check_success
+        done
+    fi
+}
+
+# Function to restore SSH access
+restore_ssh() {
+    local username="$1"
+    local backup_dir="$2"
+
+    local shell_access=$(grep -oP 'shell: \K\S+' "$backup_dir"/userdata/main)
+    if [ "$shell_access" == "/bin/bash" ]; then
+        opencli user-ssh enable "$username"
+        check_success
+        if [ -f "$backup_dir/.ssh/id_rsa.pub" ]; then
+            mkdir -p "/home/$username/.ssh"
+            cp "$backup_dir/.ssh/id_rsa.pub" "/home/$username/.ssh/authorized_keys"
+            chown -R "$username:$username" "/home/$username/.ssh"
+        fi
+    fi
+}
+
+# Function to restore DNS zones
+restore_dns_zones() {
+    local username="$1"
+    local backup_dir="$2"
+
+    if [ -d "$backup_dir/dnszones" ]; then
+        for zone_file in "$backup_dir/dnszones"/*; do
+            local zone_name=$(basename "$zone_file")
+            opencli dns-import-zone "$zone_file"
+            check_success
+        done
+    fi
+}
+
+# Function to restore files
+restore_files() {
+    local backup_dir="$1"
+    local username="$2"
+    cp -r "$backup_dir/homedir/public_html" "/home/$username/"
+    check_success
+    chown -R "$username:$username" "/home/$username/public_html"
+    check_success
+}
+
+# Function to restore WordPress sites
+restore_wordpress() {
+    local backup_dir="$1"
+    local username="$2"
+    if [ -d "$backup_dir/wptoolkit" ]; then
+        for wp_file in "$backup_dir/wptoolkit"/*.json; do
+            opencli wp-import "$username" "$wp_file"
+            check_success
+        done
+    fi
+}
+
+# Function to restore cron jobs
+restore_cron() {
+    local backup_dir="$1"
+    local username="$2"
+    if [ -f "$backup_dir/cron/crontab" ]; then
+        crontab -u "$username" "$backup_dir/cron/crontab"
+        check_success
+    fi
 }
 
 # Parsing named parameters
 while [ "$1" != "" ]; do
     case $1 in
         --backup-location ) shift
-                            backup_location=$1
+                           
+
+ backup_location=$1
                             ;;
         --docker-image )    shift
                             docker_image=$1
@@ -217,7 +361,6 @@ while [ "$1" != "" ]; do
     esac
     shift
 done
-
 
 ########### STEP 1. RUN CHECKS
 
@@ -235,47 +378,31 @@ fi
 # Install required packages
 install_dependencies
 
-
-
-
-
 ########### STEP 2. EXTRACT
-
-#todo: check available du and if username is available
 
 # Extract backup
 backup_dir="/tmp/backup_extract"
 extract_backup "$backup_location" "$backup_dir"
-
-
-
-
 
 ########### STEP 3. START IMPORT
 
 # Parse cPanel metadata
 parse_cpanel_metadata "$backup_dir"
 
-# Restore User
-openpanel user create "$cpanel_username" "$cpanel_email" user
-check_success
-echo -e "$cpanel_password\n$cpanel_password" | openpanel user set-password "$cpanel_username"
-check_success
+# Create or get hosting plan
+create_or_get_plan "$plan_name" "$plan_name plan" "$plan_domains" "$plan_websites" "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" "$docker_image" "$plan_portspeed"
 
-# Create and assign hosting plan
-opencli plan-create "$plan_name" "$plan_name plan" "$plan_domains" "$plan_websites" "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" "$docker_image" "$plan_portspeed"
-check_success
-openpanel user assign-plan "$cpanel_username" "$plan_name"
-check_success
+# Create or get user
+create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
+
+# Restore PHP version
+restore_php_version "$cpanel_username" "$php_version"
 
 # Restore Domains and Websites
 restore_website() {
     local domain="$1"
     local path="$2"
-    openpanel domain add "$domain" "$cpanel_username"
-    check_success
-    openpanel site add "$domain" --path "$path" --docker-image "$docker_image"
-    check_success
+    restore_domains "$cpanel_username" "$domain" "$path"
 }
 
 # Restore main domain
@@ -302,16 +429,8 @@ if [ -d "$backup_dir/userdata" ]; then
     done
 fi
 
-# Restore Databases and Users
-if [ -d "$backup_dir/mysql" ]; then
-    for db_file in "$backup_dir/mysql"/*.sql; do
-        db_name=$(basename "$db_file" .sql)
-        openpanel db create "$db_name" "$cpanel_username" "$cpanel_password"
-        check_success
-        mysql -u "$cpanel_username" -p"$cpanel_password" "$db_name" < "$db_file"
-        check_success
-    done
-fi
+# Restore MySQL databases and users
+restore_mysql "$cpanel_username" "$cpanel_password" "$backup_dir"
 
 # Restore Emails
 if [ -d "$backup_dir/mail" ]; then
@@ -321,28 +440,33 @@ if [ -d "$backup_dir/mail" ]; then
     check_success
 fi
 
-# Restore SSL Certificates
-if [ -d "$backup_dir/ssl" ]; then
-    for cert_file in "$backup_dir/ssl"/*.crt; do
-        domain=$(basename "$cert_file" .crt)
-        key_file="$backup_dir/ssl/$domain.key"
-        openpanel ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
-        check_success
-    done
-# we can also try to generate free ssl for all domains owned by user with: opencli ssl-user <username>
-    
-fi
+# Restore SSL certificates
+restore_ssl "$cpanel_username" "$backup_dir"
 
-# Restore Cron Jobs
-if [ -d "$backup_dir/cron" ]; then
-    crontab -u "$cpanel_username" "$backup_dir/cron/crontab"
+# Restore SSH access
+restore_ssh "$cpanel_username" "$backup_dir"
+
+# Restore DNS zones
+restore_dns_zones "$cpanel_username" "$backup_dir"
+
+# Restore Files
+restore_files "$backup_dir" "$cpanel_username"
+
+# Restore WordPress sites
+restore_wordpress "$backup_dir" "$cpanel_username"
+
+# Restore Cron jobs
+restore_cron "$backup_dir" "$cpanel_username"
+
+# Suspend user if needed
+if [ "$suspended" == "1" ]; then
+    opencli user-suspend "$cpanel_username"
     check_success
 fi
 
 # Fix file permissions
 chown -R "$cpanel_username:$cpanel_username" "/home/$cpanel_username"
-
-# for in contianer we will use: opencli files-fix_permissions [USERNAME] [PATH]
+opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
 
 ########### STEP 4. CLEANUP
 
