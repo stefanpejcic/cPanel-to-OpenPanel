@@ -16,7 +16,6 @@ def import_cpanel_whm_account():
         if not path or not plan_name:
             flash('Both path to the cPanel backup file (.tar.gz) and plan name are required!', 'error')
             return redirect('/import/cpanel')
-
         try:
             file_name = os.path.basename(path)
             log_file_name = f"cpanel_import_log_{os.path.splitext(file_name)[0]}"
