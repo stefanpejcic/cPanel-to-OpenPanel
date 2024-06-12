@@ -15,9 +15,7 @@ from modules.helpers import get_all_users, get_user_and_plan_count, get_plan_by_
 @login_required_route
 def import_cpanel_whm_account():
     if request.method == 'POST':
-        # this will be the actual exec
-        return redirect('/settings/docker')
+        return redirect('/import/cpanel')
     else:
         return render_template('cpanel-import.html', title='Import cPanel account')
 
-# helper funcitons to verify
