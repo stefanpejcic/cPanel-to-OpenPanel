@@ -241,7 +241,7 @@ restore_php_version() {
 restore_domains() {
     local username="$1"
     local domain="$2"
-    local path="$3"
+    local path="/home/$username/$domain"
 
     local domain_owner=$(opencli domains-whoowns "$domain")
     if [ -z "$domain_owner" ]; then
@@ -317,9 +317,10 @@ restore_dns_zones() {
 restore_files() {
     local backup_dir="$1"
     local username="$2"
-    cp -r "$backup_dir/homedir/public_html" "/home/$username/"
+    local domain="$3"
+    cp -r "$backup_dir/homedir" "/home/$username/$domain/"
     check_success
-    chown -R "$username:$username" "/home/$username/public_html"
+    opencli files-fix_permissions "$username" "/home/$username/$domain"
     check_success
 }
 
@@ -349,9 +350,7 @@ restore_cron() {
 while [ "$1" != "" ]; do
     case $1 in
         --backup-location ) shift
-                           
-
- backup_location=$1
+                            backup_location=$1
                             ;;
         --docker-image )    shift
                             docker_image=$1
@@ -436,7 +435,7 @@ restore_mysql "$cpanel_username" "$cpanel_password" "$backup_dir"
 if [ -d "$backup_dir/mail" ]; then
     cp -r "$backup_dir/mail" "/home/$cpanel_username/mail"
     check_success
-    chown -R "$cpanel_username:$cpanel_username" "/home/$cpanel_username/mail"
+    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username/mail"
     check_success
 fi
 
@@ -450,7 +449,7 @@ restore_ssh "$cpanel_username" "$backup_dir"
 restore_dns_zones "$cpanel_username" "$backup_dir"
 
 # Restore Files
-restore_files "$backup_dir" "$cpanel_username"
+restore_files "$backup_dir" "$cpanel_username" "$main_domain"
 
 # Restore WordPress sites
 restore_wordpress "$backup_dir" "$cpanel_username"
@@ -464,8 +463,7 @@ if [ "$suspended" == "1" ]; then
     check_success
 fi
 
-# Fix file permissions
-chown -R "$cpanel_username:$cpanel_username" "/home/$cpanel_username"
+# Fix file permissions for the entire home directory
 opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
 
 ########### STEP 4. CLEANUP
