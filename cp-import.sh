@@ -110,7 +110,7 @@ start app
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 --backup-location <path> --docker-image <image>"
+    echo "Usage: $0 [--backup-location <path> | --cpanel-username <username> --cpanel-password <password> --cpanel-host <host>] --plan-name <plan_name> --docker-image <image>"
     exit 1
 }
 
@@ -125,25 +125,36 @@ check_success() {
 # Function to install required packages
 install_dependencies() {
     if [ -f /etc/debian_version ]; then
-        # Debian-based system
         sudo apt-get update
         check_success
-        sudo apt-get install -y tar unzip jq mysql-client
+        sudo apt-get install -y tar unzip jq mysql-client wget curl
         check_success
     elif [ -f /etc/redhat-release ]; then
-        # RedHat-based system
         sudo yum install -y epel-release
         check_success
-        sudo yum install -y tar unzip jq mysql
+        sudo yum install -y tar unzip jq mysql wget curl
         check_success
     elif [ -f /etc/almalinux-release ]; then
-        # AlmaLinux system
-        sudo dnf install -y tar unzip jq mysql
+        sudo dnf install -y tar unzip jq mysql wget curl
         check_success
     else
-        echo "Unsupported OS. Please install tar, unzip, jq, and mysql-client manually."
+        echo "Unsupported OS. Please install tar, unzip, jq, mysql-client, wget, and curl manually."
         exit 1
     fi
+}
+
+# Function to download backup from cPanel
+download_backup_from_cpanel() {
+    local username="$1"
+    local password="$2"
+    local host="$3"
+    local backup_dir="$4"
+
+    # Command to generate and download backup from cPanel, using the UAPI
+    local backup_path=$(curl -u "$username:$password" -k "https://$host:2083/execute/Backup/full_backup_to_homedir" | jq -r '.data')
+    check_success
+    wget --http-user=$username --http-password=$password "https://$host:2083/$backup_path" -O "$backup_dir/cpanel_backup.tar.gz"
+    check_success
 }
 
 # Function to extract the backup file
@@ -185,7 +196,7 @@ parse_cpanel_metadata() {
     suspended=$(grep -oP 'suspended: \K\S+' "$backup_dir"/metadata/account.yaml)
 }
 
-# Function to create or get plan
+# Function to create or check and get an existing plan
 create_or_get_plan() {
     local plan_name="$1"
     local plan_description="$2"
@@ -196,13 +207,18 @@ create_or_get_plan() {
     local plan_databases="$7"
     local plan_cpu="$8"
     local plan_ram="$9"
-    local docker_image=${10}
-    local plan_portspeed=${11}
+    local docker_image="${10}"
+    local plan_portspeed="${11}"
 
+    # Check if the plan already exists
     local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
     if [ -z "$existing_plan" ]; then
-        opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" "$docker_image" "$plan_portspeed"
+        opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
+                             "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
+                             "$docker_image" "$plan_portspeed"
         check_success
+    else
+        echo "Plan $plan_name already exists, using the existing plan."
     fi
 }
 
@@ -347,10 +363,29 @@ restore_cron() {
 }
 
 # Parsing named parameters
+backup_location=""
+cpanel_username=""
+cpanel_password=""
+cpanel_host=""
+plan_name=""
+docker_image=""
+
 while [ "$1" != "" ]; do
     case $1 in
         --backup-location ) shift
                             backup_location=$1
+                            ;;
+        --cpanel-username ) shift
+                            cpanel_username=$1
+                            ;;
+        --cpanel-password ) shift
+                            cpanel_password=$1
+                            ;;
+        --cpanel-host )     shift
+                            cpanel_host=$1
+                            ;;
+        --plan-name )       shift
+                            plan_name=$1
                             ;;
         --docker-image )    shift
                             docker_image=$1
@@ -364,7 +399,7 @@ done
 ########### STEP 1. RUN CHECKS
 
 # Ensure all necessary parameters are provided
-if [ -z "$backup_location" ] || [ -z "$docker_image" ]; then
+if ([ -z "$backup_location" ] && ([ -z "$cpanel_username" ] || [ -z "$cpanel_password" ] || [ -z "$cpanel_host" ])) || [ -z "$plan_name" ] || [ -z "$docker_image" ]; then
     usage
 fi
 
@@ -379,9 +414,17 @@ install_dependencies
 
 ########### STEP 2. EXTRACT
 
-# Extract backup
+# Determine backup source and process accordingly
 backup_dir="/tmp/backup_extract"
-extract_backup "$backup_location" "$backup_dir"
+if [ ! -z "$backup_location" ]; then
+    # Local backup path provided
+    extract_backup "$backup_location" "$backup_dir"
+elif [ ! -z "$cpanel_username" ] && [ ! -z "$cpanel_password" ] && [ ! -z "$cpanel_host" ]; then
+    # Remote cPanel credentials provided
+    download_backup_from_cpanel "$cpanel_username" "$cpanel_password" "$cpanel_host" "$backup_dir"
+    backup_location="$backup_dir/cpanel_backup.tar.gz"
+    extract_backup "$backup_location" "$backup_dir"
+fi
 
 ########### STEP 3. START IMPORT
 
