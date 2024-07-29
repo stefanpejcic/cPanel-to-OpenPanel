@@ -361,9 +361,9 @@ restore_mysql() {
 	
 	    first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
      		if echo "$first_line" | grep -q "$text_to_check"; then
-	        log "WARNING: Database dump was created on a MariaDB server with ` --sandbox` mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
+	        log "WARNING: Database dump was created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
 	        # Remove the first line and save the changes to the same file
-	        tail -n +2 "$db_file" > "${db_file}.workaround" && mv "${db_file}.workaround" "$db_file"
+	        tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${db_file}.workaround" && mv "${db_file}.workaround" "$db_file"
 	    fi
 	}    
 
@@ -396,7 +396,6 @@ restore_mysql() {
         
         # STEP 4. import grants 
             log "Importing database grants"
-	    apply_sandbox_workaround "mysql.sql" # Apply the workaround if it's needed
             docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql   >/dev/null 2>&1
             docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql"
 
