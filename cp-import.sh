@@ -244,21 +244,16 @@ parse_cpanel_metadata() {
     if [ ! -f "$metadata_file" ]; then
         metadata_file="$real_backup_files_path/meta/user.yaml"
     fi
+    
+    main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
 
-    if [ -f "$metadata_file" ]; then
-        log "Metadata file found: $metadata_file"
-        main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
-        php_version=$(grep -oP 'phpversion: \K\S+' "$metadata_file" | tr -d '\r')
-    fi
-
-    cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/$cpanel_username)
+    php_version=$(grep -oP 'phpversion:\s*\K\S+' userdata/${main_domain})
+    
+    cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/${cpanel_username})
     if [ -z "$cpanel_email" ]; then
     	cpanel_email=" " #set blank
     fi
 
-    if [ -z "$php_version" ]; then
-        php_version=$(grep -oP 'phpversion:\s*\K\S+' userdata/$main_domain)
-    fi
     
     log "cPanel metadata parsed successfully."
     log "Email: $cpanel_email"
