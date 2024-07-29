@@ -247,7 +247,7 @@ parse_cpanel_metadata() {
     
     main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
 
-    php_version=$(grep -oP 'phpversion:\s*\K\S+' userdata/${main_domain})
+    php_version=$(grep -oP 'phpversion:\s*\K\S+' ${real_backup_files_path}/userdata/${main_domain})
     
     cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/${cpanel_username})
     if [ -z "$cpanel_email" ]; then
