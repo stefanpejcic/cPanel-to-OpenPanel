@@ -172,24 +172,42 @@ create_or_get_plan() {
     local plan_description="$2"
     local plan_domains="${3:-0}"
     local plan_websites="${4:-0}"
-    local plan_disk="${5:-15}"
-    local plan_inodes="${6:-500000}"
+    local plan_disk="${5:-5}"
+    local plan_inodes="${6:-250000}"
     local plan_databases="${7:-0}"
-    local plan_cpu="${8:-8}"
-    local plan_ram="${9:-8}"
+    local plan_cpu="${8:-1}"
+    local plan_ram="${9:-1}"
     local docker_image="${10}"
-    local plan_bandwidth="${11:-200}"
+    local plan_bandwidth="${11:-100}"
     local storage_file="${12:-local}"
 
     log "Creating or getting plan: $plan_name"
     local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
     if [ -z "$existing_plan" ]; then
-        opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
+        if ! opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
                              "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
-                             "$docker_image" "$plan_bandwidth" "$storage_file"
+                             "$docker_image" "$plan_bandwidth" "$storage_file"; then
+            log "Failed to create plan. Attempting to use an existing plan or create a minimal plan."
+            existing_plan=$(opencli plan-list --json | jq -r '.[0].name')
+            if [ -z "$existing_plan" ]; then
+                log "No existing plans found. Creating a minimal plan."
+                opencli plan-create "minimal_plan" "Minimal Plan" "0" "0" "1" "100000" "0" "1" "1" \
+                                     "$docker_image" "100" "local"
+                plan_name="minimal_plan"
+            else
+                log "Using existing plan: $existing_plan"
+                plan_name="$existing_plan"
+            fi
+        fi
     else
         log "Plan $plan_name already exists, using the existing plan."
     fi
+    echo "$plan_name"
+}
+get_available_resources() {
+    local available_cpu=$(nproc)
+    local available_ram=$(free -g | awk '/^Mem:/{print $2}')
+    echo "$available_cpu $available_ram"
 }
 
 # Function to create or get user
@@ -418,8 +436,12 @@ main() {
     # Parse cPanel metadata
     parse_cpanel_metadata "$backup_dir" "$plan_name"
 
+    # Get available resources
+    read -r available_cpu available_ram < <(get_available_resources)
+    log "Available resources: CPU cores: $available_cpu, RAM: ${available_ram}GB"
+    
     # Create or get hosting plan
-    create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "15" "500000" "0" "8" "8" "$docker_image" "200" "local"
+    plan_name=$(create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "5" "250000" "0" "$available_cpu" "$available_ram" "$docker_image" "100" "local")
 
     # Create or get user
     create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
