@@ -360,19 +360,18 @@ restore_mysql() {
 
         # STEP 2. start mysql for user
             log "Initializing MySQL service for user"
-            docker exec $cpanel_username bash -c "service mysql start"
-            #######TODO: SED THE MYSQL STATUS IN FILE LIKE WE DID FOR CRONS!
+            docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
 
         # STEP 3. create and import databases
         for db_file in "$mysql_dir"/*.create; do
             local db_name=$(basename "$db_file" .create)
             
             log "Creating database: $db_name"           
-            docker cp $db_name.create $cpanel_username:/tmp/${db_name}.create
+            docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create
             docker exec $cpanel_username bash -c mysql < ${db_name}.create
 
             log "Restoring database: $db_name"
-            docker cp $db_name.sql $cpanel_username:/tmp/$db_name.sql            
+            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql            
             docker exec $cpanel_username bash -c mysql < /tmp/${db_name}.sql
         done
         
