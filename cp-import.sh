@@ -188,9 +188,9 @@ extract_cpanel_backup() {
         fi
     done
 
-    # List contents of extracted backup for debugging
-    log "Contents of extracted backup:"
-    find "$backup_dir" -type f | sed 's/^/  /'
+    # debug only!
+    #log "Contents of extracted backup:"
+    #find "$backup_dir" -type f | sed 's/^/  /'
 }
 
 
@@ -215,16 +215,23 @@ locate_backup_directories() {
         #exit 1 #not critical
     fi
 
-    mysql_conf="$backup_dir/mysql.sql"
+    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql" | head -n 1)
     if [ -z "$mysqldir" ]; then
         log "WARNING: Unable to locate MySQL grants file in the backup"
         #exit 1 #not critical
     fi
-    
+
+    cp_file=$(find "$backup_dir" -type f -path "*/cp/*" -name "$cpanel_username" | head -n 1)
+    if [ -z "$cp_file" ]; then
+        log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
+        exit 1
+    fi
 
     log "Backup directories located successfully"
     log "Home directory: $homedir"
     log "MySQL directory: $mysqldir"
+    log "MySQL grants: $mysql_conf"
+    log "cPanel configuration: $cp_file"
 }
 
 
@@ -233,9 +240,9 @@ locate_backup_directories() {
 parse_cpanel_metadata() {
     log "Parsing cPanel metadata..."
 
-    local metadata_file="$backup_dir/userdata/main"
+    local metadata_file="$real_backup_files_path/userdata/main"
     if [ ! -f "$metadata_file" ]; then
-        metadata_file="$backup_dir/meta/user.yaml"
+        metadata_file="$real_backup_files_path/meta/user.yaml"
     fi
 
     if [ -f "$metadata_file" ]; then
@@ -250,7 +257,7 @@ parse_cpanel_metadata() {
     fi
 
     if [ -z "$cpanel_email" ]; then
-    	cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${backup_dir}/cp/$cpanel_username)
+    	cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/$cpanel_username)
     fi
 
     if [ -z "$php_version" ]; then
@@ -336,7 +343,8 @@ restore_domains() {
 
 # Function to restore MySQL databases and users
 restore_mysql() {
-    local mysql_dir="$"
+    local mysql_dir="$1"
+    
 
     log "Restoring MySQL databases for user $username"
     if [ -d "$mysql_dir" ]; then
@@ -546,6 +554,10 @@ main() {
     # Extract backup
     extract_cpanel_backup "$backup_location" "$backup_dir"
 
+	# backup extracted files
+    real_backup_files_path=$(find "$backup_dir" -type f -name "version" | head -n 1 | xargs dirname)
+    log "Extracted backup folder: $real_backup_files_path"
+    
     # Locate important directories
     locate_backup_directories
 
@@ -592,7 +604,7 @@ main() {
     fi
 
     # Restore other components
-    restore_mysql "$mysqldir" "$mysql_grants"
+    restore_mysql "$mysqldir"
     restore_ssl "$cpanel_username" "$backup_dir"
     restore_ssh "$cpanel_username" "$backup_dir"
     restore_dns_zones "$cpanel_username" "$backup_dir"
