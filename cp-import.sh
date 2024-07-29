@@ -182,13 +182,19 @@ create_or_get_plan() {
     local storage_file="${12:-local}"
 
     log "Creating or getting plan: $plan_name"
-    local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
+    local existing_plan=""
+    if opencli plan-list --json > /dev/null 2>&1; then
+        existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
+    fi
+
     if [ -z "$existing_plan" ]; then
         if ! opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
                              "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
                              "$docker_image" "$plan_bandwidth" "$storage_file"; then
             log "Failed to create plan. Attempting to use an existing plan or create a minimal plan."
-            existing_plan=$(opencli plan-list --json | jq -r '.[0].name')
+            if opencli plan-list --json > /dev/null 2>&1; then
+                existing_plan=$(opencli plan-list --json | jq -r '.[0].name')
+            fi
             if [ -z "$existing_plan" ]; then
                 log "No existing plans found. Creating a minimal plan."
                 opencli plan-create "minimal_plan" "Minimal Plan" "0" "0" "1" "100000" "0" "1" "1" \
@@ -206,7 +212,7 @@ create_or_get_plan() {
 }
 get_available_resources() {
     local available_cpu=$(nproc)
-    local available_ram=$(free -g | awk '/^Mem:/{print $2}')
+    local available_ram=$(free -m | awk '/^Mem:/{print int($2/1024)}')
     echo "$available_cpu $available_ram"
 }
 
@@ -218,11 +224,19 @@ create_or_get_user() {
     local plan_name="$4"
 
     log "Creating or getting user: $username"
-    local existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$username\") | .id")
+    local existing_user=""
+    if opencli user-list --json > /dev/null 2>&1; then
+        existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$username\") | .id")
+    fi
     if [ -z "$existing_user" ]; then
-        opencli user-add "$username" "$password" "$email" "$plan_name"
+        if ! opencli user-add "$username" "$password" "$email" "$plan_name"; then
+            log "Failed to create user. User might already exist or there might be an issue with the plan."
+            log "Attempting to update existing user..."
+            opencli user-update "$username" --email "$email" --plan "$plan_name"
+        fi
     else
-        log "User $username already exists."
+        log "User $username already exists. Updating user information..."
+        opencli user-update "$username" --email "$email" --plan "$plan_name"
     fi
 }
 
@@ -442,8 +456,10 @@ main() {
     
     # Create or get hosting plan
     plan_name=$(create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "5" "250000" "0" "$available_cpu" "$available_ram" "$docker_image" "100" "local")
+    log "Using plan: $plan_name"
 
-    # Create or get user
+# Create or get user
+create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"    # Create or get user
     create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
 
     # Restore PHP version
