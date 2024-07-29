@@ -4,7 +4,7 @@ set -eo pipefail
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 --backup-location <path> --plan-name <plan_name> --docker-image <image>"
+    echo "Usage: $0 --backup-location <path> --plan-name <plan_name>"
     exit 1
 }
 
