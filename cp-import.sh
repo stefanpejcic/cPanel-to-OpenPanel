@@ -155,9 +155,9 @@ check_if_valid_cp_backup(){
 
 # Extract
 extract_cpanel_backup() {
-    local backup_location="$1"
-    local backup_dir="$2"
-    log "Identifying and extracting backup from $backup_location to $backup_dir"
+    backup_location="$1"
+    backup_dir="$2"
+    log "Extracting backup from $backup_location to $backup_dir"
     mkdir -p "$backup_dir"
 
 
@@ -171,8 +171,13 @@ extract_cpanel_backup() {
     else
         $extraction_command "$backup_location" -C "$backup_dir"
     fi
-
-    log "Backup extracted successfully."
+    if [ $? -eq 0 ]; then
+    	log "Backup extracted successfully."
+    else
+    	log "Backup extraction failed."
+        #TODO: do cleanup!
+	exit 1
+    fi
 
     # Handle nested archives (common in some cPanel backups)
     for nested_archive in "$backup_dir"/*.tar.gz "$backup_dir"/*.tgz; do
@@ -192,7 +197,6 @@ extract_cpanel_backup() {
 
 # Function to locate important directories in the extracted backup
 locate_backup_directories() {
-    local backup_dir="$1"
     log "Locating important files in the extracted backup"
 
     # Try to locate the key directories
@@ -227,7 +231,6 @@ locate_backup_directories() {
 
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
-    local backup_dir="$1"
     log "Parsing cPanel metadata..."
 
     local metadata_file="$backup_dir/userdata/main"
@@ -246,11 +249,14 @@ parse_cpanel_metadata() {
         fi
     fi
 
-    # If metadata file doesn't exist or some information is missing, use backup file name and prompt for other details
-    [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
-    [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
-    [ -z "$php_version" ] && read -p "Enter PHP version (e.g., php8.1): " php_version
+    if [ -z "$cpanel_email" ]; then
+    	cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${backup_dir}/cp/$cpanel_username)
+    fi
 
+    if [ -z "$php_version" ]; then
+        php_version=$(grep -oP 'phpversion:\s*\K\S+' userdata/$main_domain)
+    fi
+    
     log "cPanel metadata parsed successfully."
     log "Email: $cpanel_email"
     log "Main Domain: $main_domain"
@@ -297,15 +303,20 @@ restore_php_version() {
     local username="$1"
     local php_version="$2"
 
-    log "Restoring PHP version $php_version for user $username"
-    local current_version=$(opencli php-default_php_version "$username")
-    if [ "$current_version" != "$php_version" ]; then
-        local installed_versions=$(opencli php-enabled_php_versions "$username")
-        if ! echo "$installed_versions" | grep -q "$php_version"; then
-            opencli php-install_php_version "$username" "$php_version"
-        fi
-        opencli php-enabled_php_versions --update "$username" "$php_version"
-    fi
+	  # Check if php_version is "inherit"
+	  if [ "$php_version" == "inherit" ]; then
+	    log "PHP version is set to inherit. No changes will be made."
+	  else
+	    log "Restoring PHP version $php_version for user $username"
+	    local current_version=$(opencli php-default_php_version "$username")
+	    if [ "$current_version" != "$php_version" ]; then
+	        local installed_versions=$(opencli php-enabled_php_versions "$username")
+	        if ! echo "$installed_versions" | grep -q "$php_version"; then
+	            opencli php-install_php_version "$username" "$php_version"
+	        fi
+	        opencli php-enabled_php_versions --update "$username" "$php_version"
+	    fi
+	  fi
 }
 
 # Function to restore domains
@@ -331,7 +342,7 @@ restore_mysql() {
     if [ -d "$mysql_dir" ]; then
 
          # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' cp/$username)
+        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${backup_dir}/cp/$username)
         log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
         sed -i "s/$old_ip/$new_ip/g" $mysql_conf
 
@@ -536,10 +547,10 @@ main() {
     extract_cpanel_backup "$backup_location" "$backup_dir"
 
     # Locate important directories
-    locate_backup_directories "$backup_dir"
+    locate_backup_directories
 
     # Parse cPanel metadata
-    parse_cpanel_metadata "$backup_dir"  #TODO: extract single file and get data from it!
+    parse_cpanel_metadata  #TODO: extract single file and get data from it!
 
     # Create user
     cpanel_password="repalcedinnextfunc"
