@@ -151,8 +151,8 @@ parse_cpanel_metadata() {
         fi
     fi
 
-    # If metadata file doesn't exist or some information is missing, use backup directory name and prompt for other details
-    [ -z "$cpanel_username" ] && cpanel_username=$(basename "$backup_dir" | sed -e 's/^backup-[0-9._-]*//g' -e 's/\.tar\.gz$//g')
+    # If metadata file doesn't exist or some information is missing, use backup file name and prompt for other details
+    [ -z "$cpanel_username" ] && cpanel_username=$(basename "$backup_location" | sed -e 's/^backup-[0-9._-]*//g' -e 's/\.tar\.gz$//g')
     [ -z "$cpanel_username" ] && read -p "Enter cPanel username: " cpanel_username
     [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
     [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
@@ -179,13 +179,14 @@ create_or_get_plan() {
     local plan_ram="${9:-8}"
     local docker_image="${10}"
     local plan_bandwidth="${11:-200}"
+    local storage_file="${12:-local}"
 
     log "Creating or getting plan: $plan_name"
     local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
     if [ -z "$existing_plan" ]; then
         opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
                              "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
-                             "$docker_image" "$plan_bandwidth"
+                             "$docker_image" "$plan_bandwidth" "$storage_file"
     else
         log "Plan $plan_name already exists, using the existing plan."
     fi
@@ -418,7 +419,7 @@ main() {
     parse_cpanel_metadata "$backup_dir" "$plan_name"
 
     # Create or get hosting plan
-    create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "15" "500000" "0" "8" "8" "$docker_image" "200"
+    create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "15" "500000" "0" "8" "8" "$docker_image" "200" "local"
 
     # Create or get user
     create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
