@@ -14,6 +14,8 @@ fi
 
 usage() {
     echo "Usage: $0 --backup-location <path> --plan-name <plan_name>"
+    echo ""
+    echo "Example: $0 --backup-location /home/backup-7.29.2024_13-22-32_stefan.tar.gz  --plan-name default_plan_nginx"
     exit 1
 }
 
@@ -349,8 +351,23 @@ restore_domains() {
 restore_mysql() {
     local mysql_dir="$1"
     
-
     log "Restoring MySQL databases for user $cpanel_username"
+    
+	#https://jira.mariadb.org/browse/MDEV-34183
+ 	apply_sandbox_workaround() {
+	    local db_file="$1"
+	    text_to_check='enable the sandbox mode'
+	    local first_line
+	
+	    first_line=$(head -n 1 /tmp/$db_file)
+     		if echo "$first_line" | grep -q "$text_to_check"; then
+	        log "WARNING: Database dump was created on a MariaDB server with ` --sandbox` mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
+	        # Remove the first line and save the changes to the same file
+	        tail -n +2 "$db_file" > "${db_file}.workaround" && mv "${db_file}.workaround" "$db_file"
+	    fi
+	}    
+
+
     if [ -d "$mysql_dir" ]; then
 
          # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
@@ -365,18 +382,21 @@ restore_mysql() {
         # STEP 3. create and import databases
         for db_file in "$mysql_dir"/*.create; do
             local db_name=$(basename "$db_file" .create)
-            
+	   
             log "Creating database: $db_name"           
-            docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
+	    apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
+	    docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
             docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
 
             log "Restoring database: $db_name"
-            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1      
+	    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
+            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
             docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.sql"
         done
         
         # STEP 4. import grants 
             log "Importing database grants"
+	    apply_sandbox_workaround "mysql.sql" # Apply the workaround if it's needed
             docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql   >/dev/null 2>&1
             docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql"
 
