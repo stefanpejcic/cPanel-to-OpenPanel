@@ -457,7 +457,7 @@ convert_cpanel_password (){
 # covert to scrypt hass
 #replace stored scrypt hash in db for that user
 #
-
+echo "nothing yet.."
 
 }
 
