@@ -130,68 +130,36 @@ locate_backup_directories() {
 
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
-       local backup_dir="$1"
+    local backup_dir="$1"
+    local plan_name="$2"
     log "Parsing cPanel metadata..."
 
-    # Try different possible locations for metadata
-    local metadata_file=""
-    for possible_file in "$backup_dir/userdata/main" "$backup_dir/user.metadata" "$homedir/../.cpanel/userdata/main" "$backup_dir/*/userdata/main" "$homedir/../../userdata/main"; do
-        if [ -f "$possible_file" ]; then
-            metadata_file="$possible_file"
-            break
-        fi
-    done
+    local metadata_file="$backup_dir/userdata/main"
 
-    if [ -z "$metadata_file" ]; then
-        log "Unable to locate metadata file. Prompting for manual input."
-        read -p "Enter cPanel username: " cpanel_username
-        read -p "Enter cPanel email: " cpanel_email
-        read -p "Enter main domain: " main_domain
-        read -p "Enter PHP version (e.g., php7.4): " php_version
-    else
+    if [ -f "$metadata_file" ]; then
         log "Metadata file found: $metadata_file"
         cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file" | tr -d '\r')
         cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file" | tr -d '\r')
         main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
         php_version=$(grep -oP 'phpversion: \K\S+' "$metadata_file" | tr -d '\r')
-    fi
+        
+        if [ -z "$php_version" ]; then
+            php_version=$(grep -oP 'php_version: \K\S+' "$metadata_file" | tr -d '\r')
+        fi
 
-
-    log "cPanel metadata parsed successfully."
-    log "Username: $cpanel_username"
-    log "Email: $cpanel_email"
-    log "Main Domain: $main_domain"
-    log "PHP Version: $php_version"
-    log "Plan Name: $plan_name"
-
-    # Parse account limits
-    local account_file="$backup_dir/metadata/account.yaml"
-    if [ -f "$account_file" ]; then
-        log "Account metadata file found: $account_file"
-        plan_name=$(grep -oP 'plan: \K\S+' "$account_file")
-        plan_disk=$(grep -oP 'disk_limit: \K\S+' "$account_file")
-        plan_bandwidth=$(grep -oP 'bandwidth_limit: \K\S+' "$account_file")
-        plan_domains=$(grep -oP 'max_domains: \K\S+' "$account_file")
-        plan_websites=$(grep -oP 'max_addon_domains: \K\S+' "$account_file")
-        plan_databases=$(grep -oP 'max_sql_db: \K\S+' "$account_file")
-        plan_inodes=$(grep -oP 'max_inodes: \K\S+' "$account_file")
-        plan_cpu=$(grep -oP 'max_cpu: \K\S+' "$account_file")
-        plan_ram=$(grep -oP 'max_ram: \K\S+' "$account_file")
-        plan_portspeed=$(grep -oP 'max_portspeed: \K\S+' "$account_file")
-        suspended=$(grep -oP 'suspended: \K\S+' "$account_file")
+        if [ -z "$cpanel_username" ] || [ -z "$cpanel_email" ] || [ -z "$main_domain" ] || [ -z "$php_version" ]; then
+            log "Some metadata is missing. Prompting for manual input."
+            [ -z "$cpanel_username" ] && read -p "Enter cPanel username: " cpanel_username
+            [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
+            [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
+            [ -z "$php_version" ] && read -p "Enter PHP version (e.g., php8.1): " php_version
+        fi
     else
-        log "Account metadata file not found. Using default values."
-        plan_name="default"
-        plan_disk="unlimited"
-        plan_bandwidth="unlimited"
-        plan_domains="unlimited"
-        plan_websites="unlimited"
-        plan_databases="unlimited"
-        plan_inodes="unlimited"
-        plan_cpu="100"
-        plan_ram="1024"
-        plan_portspeed="100"
-        suspended="0"
+        log "Unable to locate metadata file. Prompting for manual input."
+        read -p "Enter cPanel username: " cpanel_username
+        read -p "Enter cPanel email: " cpanel_email
+        read -p "Enter main domain: " main_domain
+        read -p "Enter PHP version (e.g., php8.1): " php_version
     fi
 
     log "cPanel metadata parsed successfully."
@@ -206,22 +174,22 @@ parse_cpanel_metadata() {
 create_or_get_plan() {
     local plan_name="$1"
     local plan_description="$2"
-    local plan_domains="$3"
-    local plan_websites="$4"
-    local plan_disk="$5"
-    local plan_inodes="$6"
-    local plan_databases="$7"
-    local plan_cpu="$8"
-    local plan_ram="$9"
+    local plan_domains="${3:-unlimited}"
+    local plan_websites="${4:-unlimited}"
+    local plan_disk="${5:-unlimited}"
+    local plan_inodes="${6:-unlimited}"
+    local plan_databases="${7:-unlimited}"
+    local plan_cpu="${8:-100}"
+    local plan_ram="${9:-1024}"
     local docker_image="${10}"
-    local plan_portspeed="${11}"
+    local plan_bandwidth="${11:-unlimited}"
 
     log "Creating or getting plan: $plan_name"
     local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
     if [ -z "$existing_plan" ]; then
         opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
                              "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
-                             "$docker_image" "$plan_portspeed"
+                             "$docker_image" "$plan_bandwidth"
     else
         log "Plan $plan_name already exists, using the existing plan."
     fi
@@ -418,7 +386,7 @@ main() {
             --plan-name )       shift
                                 plan_name=$1
                                 ;;
-           --docker-image )    shift
+            --docker-image )    shift
                                 docker_image=$1
                                 ;;
             * )                 usage
@@ -440,79 +408,12 @@ main() {
     # Install required packages
     install_dependencies
 
+    # Create a unique temporary directory
+    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
+    log "Created temporary directory: $backup_dir"
+
     # Extract backup
-    local backup_dir="/tmp/backup_extract"
     extract_cpanel_backup "$backup_location" "$backup_dir"
 
     # Locate important directories
-    locate_backup_directories "$backup_dir"
-
-    # Parse cPanel metadata
-    parse_cpanel_metadata "$backup_dir"
-
-    # Create or get hosting plan
-    create_or_get_plan "$plan_name" "$plan_name plan" "$plan_domains" "$plan_websites" "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" "$docker_image" "$plan_portspeed"
-
-    # Create or get user
-    create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
-
-    # Restore PHP version
-    restore_php_version "$cpanel_username" "$php_version"
-
-    # Restore Domains and Websites
-    restore_website() {
-        local domain="$1"
-        local path="$2"
-        restore_domains "$cpanel_username" "$domain" "$path"
-    }
-
-    # Restore main domain
-    if [ -d "$homedir/public_html" ]; then
-        restore_website "$main_domain" "$homedir/public_html"
-    fi
-
-    # Restore addon domains and subdomains
-    if [ -d "$backup_dir/userdata" ]; then
-        for domain_file in "$backup_dir/userdata"/*.yaml; do
-            domain=$(basename "$domain_file" .yaml)
-            domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
-            restore_website "$domain" "$domain_path"
-        done
-
-        for subdomain_file in "$backup_dir/userdata"/*_subdomains.yaml; do
-            subdomain=$(basename "$subdomain_file" _subdomains.yaml)
-            subdomain_path=$(grep -oP 'documentroot: \K\S+' "$subdomain_file")
-            full_subdomain="$subdomain.$main_domain"
-            restore_website "$full_subdomain" "$subdomain_path"
-        done
-    fi
-
-    # Restore other components
-    restore_mysql "$cpanel_username" "$cpanel_password" "$mysqldir"
-    restore_emails "$cpanel_username" "$backup_dir"
-    restore_ssl "$cpanel_username" "$backup_dir"
-    restore_ssh "$cpanel_username" "$backup_dir"
-    restore_dns_zones "$cpanel_username" "$backup_dir"
-    restore_files "$backup_dir" "$cpanel_username" "$main_domain"
-    restore_wordpress "$backup_dir" "$cpanel_username"
-    restore_cron "$backup_dir" "$cpanel_username"
-
-    # Suspend user if needed
-    if [ "$suspended" == "1" ]; then
-        log "Suspending user $cpanel_username as per backup metadata"
-        opencli user-suspend "$cpanel_username"
-    fi
-
-    # Fix file permissions for the entire home directory
-    log "Fixing file permissions for user $cpanel_username"
-    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
-
-    # Cleanup
-    log "Cleaning up temporary files"
-    rm -rf "$backup_dir"
-
-    log "Restore completed successfully."
-}
-
-# Run the main function
-main "$@"
+    locate_backup_directories "$backup_dir
