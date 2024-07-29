@@ -335,9 +335,8 @@ restore_domains() {
 
 	if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
 	    log "Restoring domain $domain for user $username"
-	    #opencli domains-add "$domain" "$username"
-     			#TODO for Stefan
-     		log "ADDING DOMAIN $domain"
+	    ## TODO FOR STEFAN ## opencli domains-add "$domain" "$username"
+     	    log "Added domain $domain" # fake until then..
 	else
 	    log "WARNING: Domain $domain already exists and will not be added to this user."
 	fi
