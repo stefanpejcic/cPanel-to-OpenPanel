@@ -169,7 +169,6 @@ locate_backup_directories() {
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
     local backup_dir="$1"
-    local plan_name="$2"
     log "Parsing cPanel metadata..."
 
     local metadata_file="$backup_dir/userdata/main"
@@ -197,52 +196,7 @@ parse_cpanel_metadata() {
     log "Email: $cpanel_email"
     log "Main Domain: $main_domain"
     log "PHP Version: $php_version"
-    log "Plan Name: $plan_name"
-}
 
-# Function to create or check and get an existing plan
-create_or_get_plan() {
-    local plan_name="$1"
-    local plan_description="$2"
-    local plan_domains="${3:-0}"
-    local plan_websites="${4:-0}"
-    local plan_disk="${5:-5}"
-    local plan_inodes="${6:-250000}"
-    local plan_databases="${7:-0}"
-    local plan_cpu="${8:-1}"
-    local plan_ram="${9:-1}"
-    local docker_image="${10}"
-    local plan_bandwidth="${11:-100}"
-    local storage_file="${12:-local}"
-
-    log "Creating or getting plan: $plan_name"
-    local existing_plan=""
-    if opencli plan-list --json > /dev/null 2>&1; then
-        existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
-    fi
-
-    if [ -z "$existing_plan" ]; then
-        if ! opencli plan-create "$plan_name" "$plan_description" "$plan_domains" "$plan_websites" \
-                             "$plan_disk" "$plan_inodes" "$plan_databases" "$plan_cpu" "$plan_ram" \
-                             "$docker_image" "$plan_bandwidth" "$storage_file"; then
-            log "Failed to create plan. Attempting to use an existing plan or create a minimal plan."
-            if opencli plan-list --json > /dev/null 2>&1; then
-                existing_plan=$(opencli plan-list --json | jq -r '.[0].name')
-            fi
-            if [ -z "$existing_plan" ]; then
-                log "No existing plans found. Creating a minimal plan."
-                opencli plan-create "minimal_plan" "Minimal Plan" "0" "0" "1" "100000" "0" "1" "1" \
-                                     "$docker_image" "100" "local"
-                plan_name="minimal_plan"
-            else
-                log "Using existing plan: $existing_plan"
-                plan_name="$existing_plan"
-            fi
-        fi
-    else
-        log "Plan $plan_name already exists, using the existing plan."
-    fi
-    echo "$plan_name"
 }
 
 
@@ -265,7 +219,7 @@ check_if_user_exists(){
 }
 
 # Function to create or get user
-create_or_get_user() {
+create_new_user() {
     local username="$1"
     local password="$2"
     local email="$3"
@@ -472,6 +426,7 @@ main() {
     check_if_valid_cp_backup "$backup_location"
     check_if_user_exists
     install_dependencies
+    validate_plan_exists "$plan_name"
 
     # Create a unique temporary directory
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
@@ -491,13 +446,10 @@ main() {
     locate_backup_directories "$backup_dir"
 
     # Parse cPanel metadata
-    parse_cpanel_metadata "$backup_dir" "$plan_name"
-
-    # Get hosting plan
-    log "Using plan: $plan_name"
+    parse_cpanel_metadata "$backup_dir"  #TODO: extract single file and get data from it!
 
     # Create user
-    create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
+    create_new_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
 
     # Restore PHP version
     restore_php_version "$cpanel_username" "$php_version"
