@@ -289,11 +289,15 @@ create_new_user() {
     local email="$3"
     local plan_name="$4"
 
-    if ! opencli user-add "$username" "$password" "$email" "$plan_name"; then
-        log "FATAL ERROR: Failed to create user. User might already exist or there might be an issue with the plan."
-        #todo: show output from opencli command so we get the error
-        exit 1
-    fi
+	create_user_command=$(opencli user-add "$username" "$password" "$email" "$plan_name" 2>&1)
+ 
+	if echo "$create_user_command" | grep -q "Successfully added user"; then
+	    log "User $$username successfully created."
+	else
+	    log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
+	    log "Command output: $create_user_command"
+	    exit 1
+	fi
 }
 
 # Function to restore PHP version
@@ -324,12 +328,19 @@ restore_domains() {
     local path="$3"
 
     log "Restoring domain $domain for user $username"
-    local domain_owner=$(opencli domains-whoowns "$domain")
-    if [ -z "$domain_owner" ]; then
-        opencli domains-add "$domain" "$username"
-    else
-        log "Domain $domain already exists and is owned by $domain_owner"
-    fi
+
+	if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+	    log "Restoring domain $domain for user $username"
+	    opencli domains-add "$domain" "$username"
+	else
+	    log "WARNING: Domain $domain already exists and will not be added to this user."
+	fi
+
+
+
+
+
+    
 }
 
 # Function to restore MySQL databases and users
