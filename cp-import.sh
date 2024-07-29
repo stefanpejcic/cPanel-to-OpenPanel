@@ -44,6 +44,20 @@ install_dependencies() {
     log "Dependencies installed successfully."
 }
 
+
+get_server_ipv4(){
+
+	# Get server ipv4 from ip.openpanel.co or ifconfig.me
+	new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
+	
+	# if no internet, get the ipv4 from the hostname -I
+	if [ -z "$new_ip" ]; then
+	    new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
+	fi
+
+}
+
+
 validate_plan_exists(){
     check_plan_sql=$(mysql -Dpanel -se "SELECT COUNT(*) FROM plans WHERE name = '$plan_name';")
     
@@ -153,7 +167,7 @@ extract_cpanel_backup() {
 # Function to locate important directories in the extracted backup
 locate_backup_directories() {
     local backup_dir="$1"
-    log "Locating important directories in the extracted backup"
+    log "Locating important files in the extracted backup"
 
     # Try to locate the key directories
     homedir=$(find "$backup_dir" -type d -name "homedir" | head -n 1)
@@ -161,15 +175,22 @@ locate_backup_directories() {
         homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
     fi
     if [ -z "$homedir" ]; then
-        log "Unable to locate home directory in the backup"
+        log "FATAL ERROR: Unable to locate home directory in the backup"
         exit 1
     fi
 
     mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
     if [ -z "$mysqldir" ]; then
-        log "Unable to locate MySQL directory in the backup"
-        exit 1
+        log "WARNING: Unable to locate MySQL directory in the backup"
+        #exit 1 #not critical
     fi
+
+    mysql_conf="$backup_dir/mysql.sql"
+    if [ -z "$mysqldir" ]; then
+        log "WARNING: Unable to locate MySQL grants file in the backup"
+        #exit 1 #not critical
+    fi
+    
 
     log "Backup directories located successfully"
     log "Home directory: $homedir"
@@ -277,21 +298,40 @@ restore_domains() {
 
 # Function to restore MySQL databases and users
 restore_mysql() {
-    local username="$1"
-    local password="$2"
-    local mysql_dir="$3"
+    local mysql_dir="$"
 
     log "Restoring MySQL databases for user $username"
     if [ -d "$mysql_dir" ]; then
-        for db_file in "$mysql_dir"/*.sql; do
-            local db_name=$(basename "$db_file" .sql)
+
+         # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
+        old_ip=$(grep -oP 'IP=\K[0-9.]+' cp/$username)
+        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
+        sed -i "s/$old_ip/$new_ip/g" $mysql_conf
+
+        # STEP 2. start mysql for user
+            log "Initializing MySQL service for user"
+            docker exec $cpanel_username bash -c "service mysql start"
+            #######TODO: SED THE MYSQL STATUS IN FILE LIKE WE DID FOR CRONS!
+
+        # STEP 3. create and import databases
+        for db_file in "$mysql_dir"/*.create; do
+            local db_name=$(basename "$db_file" .create)
+            
+            log "Creating database: $db_name"           
+            docker cp $db_name.create $cpanel_username:/tmp/${db_name}.create
+            docker exec $cpanel_username bash -c mysql < ${db_name}.create
+
             log "Restoring database: $db_name"
-            opencli db create "$db_name" "$username" "$password"
-            #todo:
-            #docker cp
-            #docker exec
-            mysql -u "$username" -p"$password" "$db_name" < "$db_file"
+            docker cp $db_name.sql $cpanel_username:/tmp/$db_name.sql            
+            docker exec $cpanel_username bash -c mysql < /tmp/${db_name}.sql
         done
+        
+        # STEP 4. import grants 
+            log "Importing database grants"
+            docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql  
+            docker exec $cpanel_username bash -c mysql < /tmp/mysql.sql
+
+        # STEP 5. flush privilegies
     else
         log "No MySQL databases found to restore"
     fi
@@ -445,7 +485,7 @@ main() {
     check_if_user_exists
     validate_plan_exists
     install_dependencies
-
+    get_server_ipv4 #used in myhsql grants
 
     # Create a unique temporary directory
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
@@ -502,7 +542,7 @@ main() {
     fi
 
     # Restore other components
-    restore_mysql "$cpanel_username" "$cpanel_password" "$mysqldir"
+    restore_mysql "$mysqldir" "$mysql_grants"
     restore_ssl "$cpanel_username" "$backup_dir"
     restore_ssh "$cpanel_username" "$backup_dir"
     restore_dns_zones "$cpanel_username" "$backup_dir"
