@@ -331,7 +331,9 @@ restore_domains() {
 
 	if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
 	    log "Restoring domain $domain for user $username"
-	    opencli domains-add "$domain" "$username"
+	    #opencli domains-add "$domain" "$username"
+     			#TODO for Stefan
+     		log "ADDING DOMAIN $domain"
 	else
 	    log "WARNING: Domain $domain already exists and will not be added to this user."
 	fi
@@ -584,10 +586,10 @@ main() {
         restore_domains "$cpanel_username" "$domain" "$path"
     }
 
-    # Restore main domain
-    if [ -d "$homedir/public_html" ]; then
-        restore_website "$main_domain" "$homedir/public_html"
-    fi
+    # Restore main domain 	#THIS currently runs 2x
+    #if [ -d "$homedir/public_html" ]; then
+    #    restore_website "$main_domain" "$homedir/public_html"
+    #fi
 
     # Restore addon domains and subdomains
     if [ -d "$backup_dir/userdata" ]; then
