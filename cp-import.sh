@@ -412,13 +412,12 @@ restore_mysql() {
 # Function to restore SSL certificates
 restore_ssl() {
     local username="$1"
-    local backup_dir="$2"
 
     log "Restoring SSL certificates for user $username"
-    if [ -d "$backup_dir/ssl" ]; then
-        for cert_file in "$backup_dir/ssl"/*.crt; do
+    if [ -d "$real_backup_files_path/ssl" ]; then
+        for cert_file in "$real_backup_files_path/ssl"/*.crt; do
             local domain=$(basename "$cert_file" .crt)
-            local key_file="$backup_dir/ssl/$domain.key"
+            local key_file="$real_backup_files_path/ssl/$domain.key"
             if [ -f "$key_file" ]; then
                 log "Installing SSL certificate for domain: $domain"
                 opencli ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
@@ -434,15 +433,14 @@ restore_ssl() {
 # Function to restore SSH access
 restore_ssh() {
     local username="$1"
-    local backup_dir="$2"
 
     log "Restoring SSH access for user $username"
-    local shell_access=$(grep -oP 'shell: \K\S+' "$backup_dir/userdata/main")
+    local shell_access=$(grep -oP 'shell: \K\S+' "$real_backup_files_path/userdata/main")
     if [ "$shell_access" == "/bin/bash" ]; then
         opencli user-ssh enable "$username"
-        if [ -f "$backup_dir/.ssh/id_rsa.pub" ]; then
+        if [ -f "$real_backup_files_path/.ssh/id_rsa.pub" ]; then
             mkdir -p "/home/$username/.ssh"
-            cp "$backup_dir/.ssh/id_rsa.pub" "/home/$username/.ssh/authorized_keys"
+            cp "$real_backup_files_path/.ssh/id_rsa.pub" "/home/$username/.ssh/authorized_keys"
             chown -R "$username:$username" "/home/$username/.ssh"
         fi
     fi
@@ -450,12 +448,10 @@ restore_ssh() {
 
 # Function to restore DNS zones
 restore_dns_zones() {
-    local username="$1"
-    local backup_dir="$2"
 
-    log "Restoring DNS zones for user $username"
-    if [ -d "$backup_dir/dnszones" ]; then
-        for zone_file in "$backup_dir/dnszones"/*; do
+    log "Restoring DNS zones for user $cpanel_username"
+    if [ -d "$real_backup_files_path/dnszones" ]; then
+        for zone_file in "$real_backup_files_path/dnszones"/*; do
             local zone_name=$(basename "$zone_file")
             log "Importing DNS zone: $zone_name"
             opencli dns-import-zone "$zone_file"
@@ -631,9 +627,9 @@ main() {
 
     # Restore other components
     restore_mysql "$mysqldir"
-    restore_ssl "$cpanel_username" "$backup_dir"
-    restore_ssh "$cpanel_username" "$backup_dir"
-    restore_dns_zones "$cpanel_username" "$backup_dir"
+    restore_ssl "$cpanel_username"
+    restore_ssh "$cpanel_username"
+    restore_dns_zones
     restore_files "$backup_dir" "$cpanel_username"
     restore_wordpress "$backup_dir" "$cpanel_username"
     restore_cron "$backup_dir" "$cpanel_username"
