@@ -373,8 +373,14 @@ restore_cron() {
     local username="$2"
 
     log "Restoring cron jobs for user $username"
-    if [ -f "$backup_dir/cron/crontab" ]; then
+    if [ -f "$backup_dir/cron/$username" ]; then
         crontab -u "$username" "$backup_dir/cron/crontab"
+        docker cp $backup_dir/cron/$username $username:/var/spool/cron/crontabs/$username
+        docker exec $username bash -c "service cron restart"
+
+        # TODO: start cron service for user
+        #docker exec $username sed CRON_STATUS="on" /etc/entrypoint.sh'
+
     else
         log "No cron jobs found to restore"
     fi
