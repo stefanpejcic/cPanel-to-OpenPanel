@@ -119,7 +119,7 @@ check_if_valid_cp_backup(){
 
     # Identify the backup type
     local backup_filename=$(basename "$backup_location")
-    local extraction_command=""
+    extraction_command=""
 
     case "$backup_filename" in
         cpmove-*.tar.gz)
