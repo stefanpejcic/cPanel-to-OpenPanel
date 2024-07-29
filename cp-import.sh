@@ -1,5 +1,7 @@
 #!/bin/bash
 
+script_dir=$(dirname "$0")
+
 set -eo pipefail
 
 # root user is needed
@@ -217,7 +219,7 @@ locate_backup_directories() {
         #exit 1 #not critical
     fi
 
-    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql" | head -n 1)
+    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql-auth.json" | head -n 1)
     if [ -z "$mysqldir" ]; then
         log "WARNING: Unable to locate MySQL grants file in the backup"
         #exit 1 #not critical
@@ -396,8 +398,10 @@ restore_mysql() {
         
         # STEP 4. import grants 
             log "Importing database grants"
-            docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql   >/dev/null 2>&1
-            docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql"
+	    python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql-auth.json ${real_backup_files_path}/mysql.sql-auth.sql
+     
+            docker cp ${real_backup_files_path}/mysql.sql-auth.sql $cpanel_username:/tmp/mysql.sql-auth.sql   >/dev/null 2>&1
+            docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql-auth.sql"
 
         # STEP 5. flush privilegies
     else
