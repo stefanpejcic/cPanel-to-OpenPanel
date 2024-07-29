@@ -135,6 +135,9 @@ parse_cpanel_metadata() {
     log "Parsing cPanel metadata..."
 
     local metadata_file="$backup_dir/userdata/main"
+    if [ ! -f "$metadata_file" ]; then
+        metadata_file="$backup_dir/meta/user.yaml"
+    fi
 
     if [ -f "$metadata_file" ]; then
         log "Metadata file found: $metadata_file"
@@ -146,21 +149,14 @@ parse_cpanel_metadata() {
         if [ -z "$php_version" ]; then
             php_version=$(grep -oP 'php_version: \K\S+' "$metadata_file" | tr -d '\r')
         fi
-
-        if [ -z "$cpanel_username" ] || [ -z "$cpanel_email" ] || [ -z "$main_domain" ] || [ -z "$php_version" ]; then
-            log "Some metadata is missing. Prompting for manual input."
-            [ -z "$cpanel_username" ] && read -p "Enter cPanel username: " cpanel_username
-            [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
-            [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
-            [ -z "$php_version" ] && read -p "Enter PHP version (e.g., php8.1): " php_version
-        fi
-    else
-        log "Unable to locate metadata file. Prompting for manual input."
-        read -p "Enter cPanel username: " cpanel_username
-        read -p "Enter cPanel email: " cpanel_email
-        read -p "Enter main domain: " main_domain
-        read -p "Enter PHP version (e.g., php8.1): " php_version
     fi
+
+    # If metadata file doesn't exist or some information is missing, use backup directory name and prompt for other details
+    [ -z "$cpanel_username" ] && cpanel_username=$(basename "$backup_dir" | sed -e 's/^backup-[0-9._-]*//g' -e 's/\.tar\.gz$//g')
+    [ -z "$cpanel_username" ] && read -p "Enter cPanel username: " cpanel_username
+    [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
+    [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
+    [ -z "$php_version" ] && read -p "Enter PHP version (e.g., php8.1): " php_version
 
     log "cPanel metadata parsed successfully."
     log "Username: $cpanel_username"
@@ -174,15 +170,15 @@ parse_cpanel_metadata() {
 create_or_get_plan() {
     local plan_name="$1"
     local plan_description="$2"
-    local plan_domains="${3:-unlimited}"
-    local plan_websites="${4:-unlimited}"
-    local plan_disk="${5:-unlimited}"
-    local plan_inodes="${6:-unlimited}"
-    local plan_databases="${7:-unlimited}"
-    local plan_cpu="${8:-100}"
-    local plan_ram="${9:-1024}"
+    local plan_domains="${3:-0}"
+    local plan_websites="${4:-0}"
+    local plan_disk="${5:-15}"
+    local plan_inodes="${6:-500000}"
+    local plan_databases="${7:-0}"
+    local plan_cpu="${8:-8}"
+    local plan_ram="${9:-8}"
     local docker_image="${10}"
-    local plan_bandwidth="${11:-unlimited}"
+    local plan_bandwidth="${11:-200}"
 
     log "Creating or getting plan: $plan_name"
     local existing_plan=$(opencli plan-list --json | jq -r ".[] | select(.name == \"$plan_name\") | .id")
@@ -422,7 +418,7 @@ main() {
     parse_cpanel_metadata "$backup_dir" "$plan_name"
 
     # Create or get hosting plan
-    create_or_get_plan "$plan_name" "$plan_name plan" "" "" "" "" "" "" "" "$docker_image" ""
+    create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "15" "500000" "0" "8" "8" "$docker_image" "200"
 
     # Create or get user
     create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
