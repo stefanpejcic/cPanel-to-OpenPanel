@@ -404,7 +404,6 @@ restore_cron() {
 main() {
     local backup_location=""
     local plan_name=""
-    local docker_image=""
 
     # Parse command-line arguments
     while [ "$1" != "" ]; do
@@ -415,16 +414,13 @@ main() {
             --plan-name )       shift
                                 plan_name=$1
                                 ;;
-            --docker-image )    shift
-                                docker_image=$1
-                                ;;
             * )                 usage
         esac
         shift
     done
 
     # Validate required parameters
-    if [ -z "$backup_location" ] || [ -z "$plan_name" ] || [ -z "$docker_image" ]; then
+    if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
         usage
     fi
 
@@ -513,6 +509,9 @@ create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_
 
     log "Restore completed successfully."
 }
+
+
+
 
 # Run the main function
 main "$@"
