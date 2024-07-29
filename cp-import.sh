@@ -399,8 +399,8 @@ restore_files() {
     local username="$2"
 
     log "Restoring files for user $username to /home/$username/"
-    cp -r "$backup_dir/homedir" "/home/$username/"
-    opencli files-fix_permissions "$username"
+    cp -r "$backup_dir/homedir" "/home/$username/"  #TODO: use parallel or xargs
+    docker exec $username bash -c "chown -R 1000:34 /home/$username"
 }
 
 # Function to restore WordPress sites
@@ -558,7 +558,7 @@ main() {
     restore_ssl "$cpanel_username" "$backup_dir"
     restore_ssh "$cpanel_username" "$backup_dir"
     restore_dns_zones "$cpanel_username" "$backup_dir"
-    restore_files "$backup_dir" "$cpanel_username" "$main_domain"
+    restore_files "$backup_dir" "$cpanel_username"
     restore_wordpress "$backup_dir" "$cpanel_username"
     restore_cron "$backup_dir" "$cpanel_username"
 
