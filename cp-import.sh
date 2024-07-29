@@ -450,7 +450,16 @@ restore_cron() {
 
 
 
+convert_cpanel_password (){
 
+#TODO:
+# get hash and salt from shadow file in extracted files
+# covert to scrypt hass
+#replace stored scrypt hash in db for that user
+#
+
+
+}
 
 
 
@@ -491,11 +500,9 @@ main() {
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
 
-
-
          ## RUN PROCESS
 
-         ## POST-RUN CHECKS
+
 
     
     # Extract backup
@@ -508,7 +515,12 @@ main() {
     parse_cpanel_metadata "$backup_dir"  #TODO: extract single file and get data from it!
 
     # Create user
+    cpanel_password="repalcedinnextfunc"
     create_new_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
+
+# Set password
+    convert_cpanel_password   #TODO: convert hash from cp
+
 
     # Restore PHP version
     restore_php_version "$cpanel_username" "$php_version"
@@ -560,6 +572,9 @@ main() {
 
     log "Restore completed successfully."
 }
+
+         ## POST-RUN CHECKS
+
 
 
 ###############################################################
