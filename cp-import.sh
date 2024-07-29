@@ -96,6 +96,10 @@ extract_cpanel_backup() {
             rm "$nested_archive"  # Remove the nested archive after extraction
         fi
     done
+
+    # List contents of extracted backup for debugging
+    log "Contents of extracted backup:"
+    find "$backup_dir" -type f | sed 's/^/  /'
 }
 
 # Function to locate important directories in the extracted backup
@@ -104,29 +108,21 @@ locate_backup_directories() {
     log "Locating important directories in the extracted backup"
 
     # Try to locate the key directories
-    if [ -d "$backup_dir/homedir" ]; then
-        homedir="$backup_dir/homedir"
-    elif [ -d "$backup_dir/home" ]; then
-        homedir="$backup_dir/home"
-    else
-        homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
-        if [ -z "$homedir" ]; then
-            log "Unable to locate home directory in the backup"
-            exit 1
-        fi
+    homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
+    if [ -z "$homedir" ]; then
+        log "Unable to locate home directory in the backup"
+        exit 1
     fi
 
-    if [ -d "$backup_dir/mysql" ]; then
-        mysqldir="$backup_dir/mysql"
-    else
-        mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
-        if [ -z "$mysqldir" ]; then
-            log "Unable to locate MySQL directory in the backup"
-            exit 1
-        fi
+    mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
+    if [ -z "$mysqldir" ]; then
+        log "Unable to locate MySQL directory in the backup"
+        exit 1
     fi
 
     log "Backup directories located successfully"
+    log "Home directory: $homedir"
+    log "MySQL directory: $mysqldir"
 }
 
 # Function to parse cPanel backup metadata
@@ -136,7 +132,7 @@ parse_cpanel_metadata() {
 
     # Try different possible locations for metadata
     local metadata_file=""
-    for possible_file in "$backup_dir/userdata/main" "$backup_dir/user.metadata" "$homedir/../.cpanel/userdata/main"; do
+    for possible_file in "$backup_dir/userdata/main" "$backup_dir/user.metadata" "$homedir/../.cpanel/userdata/main" "$backup_dir/*/userdata/main"; do
         if [ -f "$possible_file" ]; then
             metadata_file="$possible_file"
             break
@@ -144,18 +140,23 @@ parse_cpanel_metadata() {
     done
 
     if [ -z "$metadata_file" ]; then
-        log "Unable to locate metadata file"
-        exit 1
+        log "Unable to locate metadata file. Prompting for manual input."
+        read -p "Enter cPanel username: " cpanel_username
+        read -p "Enter cPanel email: " cpanel_email
+        read -p "Enter main domain: " main_domain
+        read -p "Enter PHP version: " php_version
+    else
+        log "Metadata file found: $metadata_file"
+        cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file")
+        cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file")
+        main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file")
+        php_version=$(grep -oP 'php_version: \K\S+' "$metadata_file")
     fi
-
-    cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file")
-    cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file")
-    main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file")
-    php_version=$(grep -oP 'php_version: \K\S+' "$metadata_file")
 
     # Parse account limits
     local account_file="$backup_dir/metadata/account.yaml"
     if [ -f "$account_file" ]; then
+        log "Account metadata file found: $account_file"
         plan_name=$(grep -oP 'plan: \K\S+' "$account_file")
         plan_disk=$(grep -oP 'disk_limit: \K\S+' "$account_file")
         plan_bandwidth=$(grep -oP 'bandwidth_limit: \K\S+' "$account_file")
@@ -183,6 +184,11 @@ parse_cpanel_metadata() {
     fi
 
     log "cPanel metadata parsed successfully."
+    log "Username: $cpanel_username"
+    log "Email: $cpanel_email"
+    log "Main Domain: $main_domain"
+    log "PHP Version: $php_version"
+    log "Plan Name: $plan_name"
 }
 
 # Function to create or check and get an existing plan
@@ -401,7 +407,7 @@ main() {
             --plan-name )       shift
                                 plan_name=$1
                                 ;;
-            --docker-image )    shift
+           --docker-image )    shift
                                 docker_image=$1
                                 ;;
             * )                 usage
@@ -420,7 +426,7 @@ main() {
         exit 1
     fi
 
-   # Install required packages
+    # Install required packages
     install_dependencies
 
     # Extract backup
