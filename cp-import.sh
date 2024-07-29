@@ -108,7 +108,10 @@ locate_backup_directories() {
     log "Locating important directories in the extracted backup"
 
     # Try to locate the key directories
-    homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
+    homedir=$(find "$backup_dir" -type d -name "homedir" | head -n 1)
+    if [ -z "$homedir" ]; then
+        homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
+    fi
     if [ -z "$homedir" ]; then
         log "Unable to locate home directory in the backup"
         exit 1
@@ -127,12 +130,12 @@ locate_backup_directories() {
 
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
-    local backup_dir="$1"
+       local backup_dir="$1"
     log "Parsing cPanel metadata..."
 
     # Try different possible locations for metadata
     local metadata_file=""
-    for possible_file in "$backup_dir/userdata/main" "$backup_dir/user.metadata" "$homedir/../.cpanel/userdata/main" "$backup_dir/*/userdata/main"; do
+    for possible_file in "$backup_dir/userdata/main" "$backup_dir/user.metadata" "$homedir/../.cpanel/userdata/main" "$backup_dir/*/userdata/main" "$homedir/../../userdata/main"; do
         if [ -f "$possible_file" ]; then
             metadata_file="$possible_file"
             break
@@ -144,14 +147,22 @@ parse_cpanel_metadata() {
         read -p "Enter cPanel username: " cpanel_username
         read -p "Enter cPanel email: " cpanel_email
         read -p "Enter main domain: " main_domain
-        read -p "Enter PHP version: " php_version
+        read -p "Enter PHP version (e.g., php7.4): " php_version
     else
         log "Metadata file found: $metadata_file"
-        cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file")
-        cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file")
-        main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file")
-        php_version=$(grep -oP 'php_version: \K\S+' "$metadata_file")
+        cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file" | tr -d '\r')
+        cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file" | tr -d '\r')
+        main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
+        php_version=$(grep -oP 'phpversion: \K\S+' "$metadata_file" | tr -d '\r')
     fi
+
+
+    log "cPanel metadata parsed successfully."
+    log "Username: $cpanel_username"
+    log "Email: $cpanel_email"
+    log "Main Domain: $main_domain"
+    log "PHP Version: $php_version"
+    log "Plan Name: $plan_name"
 
     # Parse account limits
     local account_file="$backup_dir/metadata/account.yaml"
