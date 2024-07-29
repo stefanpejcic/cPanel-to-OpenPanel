@@ -2,34 +2,41 @@
 
 set -eo pipefail
 
-# Function to display usage
+# root user is needed
+if [[ $EUID -ne 0 ]]; then
+    log "This script must be run as root or with sudo privileges"
+    exit 1
+fi
+
+
+###############################################################
+# HELPER FUNCTIONS
+
 usage() {
     echo "Usage: $0 --backup-location <path> --plan-name <plan_name>"
     exit 1
 }
 
-# Function to log messages
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# Function to handle errors
 handle_error() {
     log "Error occurred in function '$1' on line $2"
     exit 1
 }
 
+
 trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
 
-# Function to install required packages
 install_dependencies() {
     log "Installing dependencies..."
     if [ -f /etc/debian_version ]; then
-        sudo apt-get update && sudo apt-get install -y tar unzip jq mysql-client wget curl
+        apt-get update && sudo apt-get install -y tar unzip jq mysql-client wget curl
     elif [ -f /etc/redhat-release ]; then
-        sudo yum install -y epel-release tar unzip jq mysql wget curl
+        yum install -y epel-release tar unzip jq mysql wget curl
     elif [ -f /etc/almalinux-release ]; then
-        sudo dnf install -y tar unzip jq mysql wget curl
+        dnf install -y tar unzip jq mysql wget curl
     else
         log "Unsupported OS. Please install tar, unzip, jq, mysql-client, wget, and curl manually."
         exit 1
@@ -37,12 +44,26 @@ install_dependencies() {
     log "Dependencies installed successfully."
 }
 
-# Function to identify and extract the cPanel backup
-extract_cpanel_backup() {
+
+###############################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################################
+# MAIN FUNCTIONS
+
+check_if_valid_cp_backup(){
     local backup_location="$1"
-    local backup_dir="$2"
-    log "Identifying and extracting backup from $backup_location to $backup_dir"
-    mkdir -p "$backup_dir"
 
     # Identify the backup type
     local backup_filename=$(basename "$backup_location")
@@ -78,6 +99,19 @@ extract_cpanel_backup() {
             exit 1
             ;;
     esac
+}
+
+# Extract
+extract_cpanel_backup() {
+    local backup_location="$1"
+    local backup_dir="$2"
+    log "Identifying and extracting backup from $backup_location to $backup_dir"
+    mkdir -p "$backup_dir"
+
+
+    #TODO: check if server has enough space to unpack it and then to copy.
+    # should be free on /home about 80% of the compressed archive and 80% on tmp.
+    # in case tmp is toosmall, use /home  but then at least 160% of archive needs to be available.
 
     # Extract the backup
     if [ "$extraction_command" = "unzip" ]; then
@@ -101,6 +135,8 @@ extract_cpanel_backup() {
     log "Contents of extracted backup:"
     find "$backup_dir" -type f | sed 's/^/  /'
 }
+
+
 
 # Function to locate important directories in the extracted backup
 locate_backup_directories() {
@@ -128,6 +164,8 @@ locate_backup_directories() {
     log "MySQL directory: $mysqldir"
 }
 
+
+
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
     local backup_dir="$1"
@@ -141,7 +179,6 @@ parse_cpanel_metadata() {
 
     if [ -f "$metadata_file" ]; then
         log "Metadata file found: $metadata_file"
-        cpanel_username=$(grep -oP 'user: \K\S+' "$metadata_file" | tr -d '\r')
         cpanel_email=$(grep -oP 'email: \K\S+' "$metadata_file" | tr -d '\r')
         main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
         php_version=$(grep -oP 'phpversion: \K\S+' "$metadata_file" | tr -d '\r')
@@ -152,14 +189,11 @@ parse_cpanel_metadata() {
     fi
 
     # If metadata file doesn't exist or some information is missing, use backup file name and prompt for other details
-    [ -z "$cpanel_username" ] && cpanel_username=$(basename "$backup_location" | sed -e 's/^backup-[0-9._-]*//g' -e 's/\.tar\.gz$//g')
-    [ -z "$cpanel_username" ] && read -p "Enter cPanel username: " cpanel_username
     [ -z "$cpanel_email" ] && read -p "Enter cPanel email: " cpanel_email
     [ -z "$main_domain" ] && read -p "Enter main domain: " main_domain
     [ -z "$php_version" ] && read -p "Enter PHP version (e.g., php8.1): " php_version
 
     log "cPanel metadata parsed successfully."
-    log "Username: $cpanel_username"
     log "Email: $cpanel_email"
     log "Main Domain: $main_domain"
     log "PHP Version: $php_version"
@@ -210,10 +244,24 @@ create_or_get_plan() {
     fi
     echo "$plan_name"
 }
-get_available_resources() {
-    local available_cpu=$(nproc)
-    local available_ram=$(free -m | awk '/^Mem:/{print int($2/1024)}')
-    echo "$available_cpu $available_ram"
+
+
+check_if_user_exists(){   
+    cpanel_username="${backup_filename##*_}"
+    cpanel_username="${username%%.*}"
+    log "Username: $cpanel_username"
+    
+    local existing_user=""
+    if opencli user-list --json > /dev/null 2>&1; then
+        existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
+    fi
+    if [ -z "$existing_user" ]; then
+        log "Username $cpanel_username is available, staring import.."
+    else
+        log "FATAL ERROR: $cpanel_username already exists."
+        exit 1
+    fi
+
 }
 
 # Function to create or get user
@@ -223,20 +271,10 @@ create_or_get_user() {
     local email="$3"
     local plan_name="$4"
 
-    log "Creating or getting user: $username"
-    local existing_user=""
-    if opencli user-list --json > /dev/null 2>&1; then
-        existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$username\") | .id")
-    fi
-    if [ -z "$existing_user" ]; then
-        if ! opencli user-add "$username" "$password" "$email" "$plan_name"; then
-            log "Failed to create user. User might already exist or there might be an issue with the plan."
-            log "Attempting to update existing user..."
-            opencli user-update "$username" --email "$email" --plan "$plan_name"
-        fi
-    else
-        log "User $username already exists. Updating user information..."
-        opencli user-update "$username" --email "$email" --plan "$plan_name"
+    if ! opencli user-add "$username" "$password" "$email" "$plan_name"; then
+        log "FATAL ERROR: Failed to create user. User might already exist or there might be an issue with the plan."
+        #todo: show output from opencli command so we get the error
+        exit 1
     fi
 }
 
@@ -265,7 +303,7 @@ restore_domains() {
     log "Restoring domain $domain for user $username"
     local domain_owner=$(opencli domains-whoowns "$domain")
     if [ -z "$domain_owner" ]; then
-        opencli domains-add "$domain" "$username" "$path"
+        opencli domains-add "$domain" "$username"
     else
         log "Domain $domain already exists and is owned by $domain_owner"
     fi
@@ -283,24 +321,13 @@ restore_mysql() {
             local db_name=$(basename "$db_file" .sql)
             log "Restoring database: $db_name"
             opencli db create "$db_name" "$username" "$password"
+            #todo:
+            #docker cp
+            #docker exec
             mysql -u "$username" -p"$password" "$db_name" < "$db_file"
         done
     else
         log "No MySQL databases found to restore"
-    fi
-}
-
-# Function to restore emails
-restore_emails() {
-    local username="$1"
-    local backup_dir="$2"
-
-    log "Restoring emails for user $username"
-    if [ -d "$backup_dir/mail" ]; then
-        cp -r "$backup_dir/mail" "/home/$username/mail"
-        opencli files-fix_permissions "$username" "/home/$username/mail"
-    else
-        log "No email data found to restore"
     fi
 }
 
@@ -364,11 +391,10 @@ restore_dns_zones() {
 restore_files() {
     local backup_dir="$1"
     local username="$2"
-    local domain="$3"
 
-    log "Restoring files for user $username and domain $domain"
-    cp -r "$backup_dir/homedir" "/home/$username/$domain/"
-    opencli files-fix_permissions "$username" "/home/$username/$domain"
+    log "Restoring files for user $username to /home/$username/"
+    cp -r "$backup_dir/homedir" "/home/$username/"
+    opencli files-fix_permissions "$username"
 }
 
 # Function to restore WordPress sites
@@ -400,6 +426,23 @@ restore_cron() {
     fi
 }
 
+###############################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Main execution
 main() {
     local backup_location=""
@@ -424,19 +467,23 @@ main() {
         usage
     fi
 
-    # Ensure the script is run with superuser privileges
-    if [[ $EUID -ne 0 ]]; then
-        log "This script must be run as root or with sudo privileges"
-        exit 1
-    fi
 
-    # Install required packages
+    ################# PRE-RUN CHECKS
+    check_if_valid_cp_backup "$backup_location"
+    check_if_user_exists
     install_dependencies
 
     # Create a unique temporary directory
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
 
+
+
+         ## RUN PROCESS
+
+         ## POST-RUN CHECKS
+
+    
     # Extract backup
     extract_cpanel_backup "$backup_location" "$backup_dir"
 
@@ -446,16 +493,10 @@ main() {
     # Parse cPanel metadata
     parse_cpanel_metadata "$backup_dir" "$plan_name"
 
-    # Get available resources
-    read -r available_cpu available_ram < <(get_available_resources)
-    log "Available resources: CPU cores: $available_cpu, RAM: ${available_ram}GB"
-    
-    # Create or get hosting plan
-    plan_name=$(create_or_get_plan "default_plan_nginx" "Default Nginx Plan" "0" "0" "5" "250000" "0" "$available_cpu" "$available_ram" "$docker_image" "100" "local")
+    # Get hosting plan
     log "Using plan: $plan_name"
 
-# Create or get user
-create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"    # Create or get user
+    # Create user
     create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
 
     # Restore PHP version
@@ -491,7 +532,6 @@ create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_
 
     # Restore other components
     restore_mysql "$cpanel_username" "$cpanel_password" "$mysqldir"
-    restore_emails "$cpanel_username" "$backup_dir"
     restore_ssl "$cpanel_username" "$backup_dir"
     restore_ssh "$cpanel_username" "$backup_dir"
     restore_dns_zones "$cpanel_username" "$backup_dir"
@@ -511,7 +551,7 @@ create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_
 }
 
 
-
+###############################################################
 
 # Run the main function
 main "$@"
