@@ -44,6 +44,18 @@ install_dependencies() {
     log "Dependencies installed successfully."
 }
 
+validate_plan_exists(){
+    check_plan_sql=$(mysql -Dpanel -se "SELECT COUNT(*) FROM plans WHERE name = '$plan_name';")
+    
+    # Check the result
+    if [ "$check_plan_sql" -gt 0 ]; then
+        log "Plan name '$plan_name' exists in the plans table."
+    else
+        log "Plan name '$plan_name' does not exist in the plans table."
+        exit 1
+    fi
+}
+
 
 ###############################################################
 
@@ -431,8 +443,9 @@ main() {
     ################# PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
     check_if_user_exists
+    validate_plan_exists
     install_dependencies
-    validate_plan_exists "$plan_name"
+
 
     # Create a unique temporary directory
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
