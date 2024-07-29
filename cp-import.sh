@@ -367,17 +367,17 @@ restore_mysql() {
             local db_name=$(basename "$db_file" .create)
             
             log "Creating database: $db_name"           
-            docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create
-            docker exec $cpanel_username bash -c mysql < ${db_name}.create
+            docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
+            docker exec $cpanel_username bash -c mysql < /tmp/${db_name}.create
 
             log "Restoring database: $db_name"
-            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql            
+            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1      
             docker exec $cpanel_username bash -c mysql < /tmp/${db_name}.sql
         done
         
         # STEP 4. import grants 
             log "Importing database grants"
-            docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql  
+            docker cp $mysql_conf $cpanel_username:/tmp/mysql.sql   >/dev/null 2>&1
             docker exec $cpanel_username bash -c mysql < /tmp/mysql.sql
 
         # STEP 5. flush privilegies
