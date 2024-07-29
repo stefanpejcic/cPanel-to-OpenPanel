@@ -29,19 +29,45 @@ handle_error() {
 
 trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
 
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 install_dependencies() {
-    log "Installing dependencies..."
-    if [ -f /etc/debian_version ]; then
-        apt-get update && sudo apt-get install -y tar unzip jq mysql-client wget curl
-    elif [ -f /etc/redhat-release ]; then
-        yum install -y epel-release tar unzip jq mysql wget curl
-    elif [ -f /etc/almalinux-release ]; then
-        dnf install -y tar unzip jq mysql wget curl
-    else
-        log "Unsupported OS. Please install tar, unzip, jq, mysql-client, wget, and curl manually."
-        exit 1
-    fi
-    log "Dependencies installed successfully."
+    log "Checking dependencies..."
+	
+	install_needed=false
+	
+	# needed commands
+	declare -A commands=(
+	    ["tar"]="tar"
+	    ["unzip"]="unzip"
+	    ["jq"]="jq"
+	    ["mysql"]="mysql-client"
+	    ["wget"]="wget"
+	    ["curl"]="curl"
+	)
+	
+	for cmd in "${!commands[@]}"; do
+	    if ! command_exists "$cmd"; then
+	        install_needed=true
+	        break
+	    fi
+	done
+
+
+	# If installation is needed, update package list and install missing packages
+	if [ "$install_needed" = true ]; then
+ 	    log "Updating package manager.."
+	    apt-get update
+	    for cmd in "${!commands[@]}"; do
+	        if ! command_exists "$cmd"; then
+	 		log "Installing ${commands[$cmd]}"
+	            apt-get install -y "${commands[$cmd]}"
+	        fi
+	    done
+     	    log "Dependencies installed successfully."
+	fi
 }
 
 
@@ -233,9 +259,10 @@ parse_cpanel_metadata() {
 }
 
 
-check_if_user_exists(){   
+check_if_user_exists(){  
+    backup_filename=$(basename "$backup_location")
     cpanel_username="${backup_filename##*_}"
-    cpanel_username="${username%%.*}"
+    cpanel_username="${cpanel_username%%.*}"
     log "Username: $cpanel_username"
     
     local existing_user=""
