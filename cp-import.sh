@@ -391,7 +391,7 @@ restore_mysql() {
             log "Restoring database: $db_name"
 	    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
             docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
-            docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.sql"
+            docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
         done
         
         # STEP 4. import grants 
