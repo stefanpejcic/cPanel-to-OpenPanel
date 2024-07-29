@@ -350,11 +350,11 @@ restore_mysql() {
     local mysql_dir="$1"
     
 
-    log "Restoring MySQL databases for user $username"
+    log "Restoring MySQL databases for user $cpanel_username"
     if [ -d "$mysql_dir" ]; then
 
          # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${backup_dir}/cp/$username)
+        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
         log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
         sed -i "s/$old_ip/$new_ip/g" $mysql_conf
 
