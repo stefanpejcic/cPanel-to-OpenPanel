@@ -359,7 +359,7 @@ restore_mysql() {
 	    text_to_check='enable the sandbox mode'
 	    local first_line
 	
-	    first_line=$(head -n 1 /tmp/$db_file)
+	    first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
      		if echo "$first_line" | grep -q "$text_to_check"; then
 	        log "WARNING: Database dump was created on a MariaDB server with ` --sandbox` mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
 	        # Remove the first line and save the changes to the same file
