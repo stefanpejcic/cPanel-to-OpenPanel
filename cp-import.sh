@@ -416,4 +416,68 @@ main() {
     extract_cpanel_backup "$backup_location" "$backup_dir"
 
     # Locate important directories
-    locate_backup_directories "$backup_dir
+    locate_backup_directories "$backup_dir"
+
+    # Parse cPanel metadata
+    parse_cpanel_metadata "$backup_dir" "$plan_name"
+
+    # Create or get hosting plan
+    create_or_get_plan "$plan_name" "$plan_name plan" "" "" "" "" "" "" "" "$docker_image" ""
+
+    # Create or get user
+    create_or_get_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
+
+    # Restore PHP version
+    restore_php_version "$cpanel_username" "$php_version"
+
+    # Restore Domains and Websites
+    restore_website() {
+        local domain="$1"
+        local path="$2"
+        restore_domains "$cpanel_username" "$domain" "$path"
+    }
+
+    # Restore main domain
+    if [ -d "$homedir/public_html" ]; then
+        restore_website "$main_domain" "$homedir/public_html"
+    fi
+
+    # Restore addon domains and subdomains
+    if [ -d "$backup_dir/userdata" ]; then
+        for domain_file in "$backup_dir/userdata"/*.yaml; do
+            domain=$(basename "$domain_file" .yaml)
+            domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
+            restore_website "$domain" "$domain_path"
+        done
+
+        for subdomain_file in "$backup_dir/userdata"/*_subdomains.yaml; do
+            subdomain=$(basename "$subdomain_file" _subdomains.yaml)
+            subdomain_path=$(grep -oP 'documentroot: \K\S+' "$subdomain_file")
+            full_subdomain="$subdomain.$main_domain"
+            restore_website "$full_subdomain" "$subdomain_path"
+        done
+    fi
+
+    # Restore other components
+    restore_mysql "$cpanel_username" "$cpanel_password" "$mysqldir"
+    restore_emails "$cpanel_username" "$backup_dir"
+    restore_ssl "$cpanel_username" "$backup_dir"
+    restore_ssh "$cpanel_username" "$backup_dir"
+    restore_dns_zones "$cpanel_username" "$backup_dir"
+    restore_files "$backup_dir" "$cpanel_username" "$main_domain"
+    restore_wordpress "$backup_dir" "$cpanel_username"
+    restore_cron "$backup_dir" "$cpanel_username"
+
+    # Fix file permissions for the entire home directory
+    log "Fixing file permissions for user $cpanel_username"
+    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
+
+    # Cleanup
+    log "Cleaning up temporary files"
+    rm -rf "$backup_dir"
+
+    log "Restore completed successfully."
+}
+
+# Run the main function
+main "$@"
