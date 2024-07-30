@@ -643,7 +643,7 @@ main() {
 
 		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
 		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
-		    opencli domains-add "$main_domain" "$cpanel_username"
+		    opencli domains-add "$main_domain" "$cpanel_username"  >/dev/null 2>&1
 		else
 		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
 		fi
