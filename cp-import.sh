@@ -3,8 +3,6 @@
 script_dir=$(dirname "$0")
 timestamp="$(date +'%Y-%m-%d_%H-%M-%S')" #used by log file name 
 start_time=$(date +%s) #used to calculate elapsed time at the end
-background=false
-
 
 set -eo pipefail
 
@@ -47,9 +45,6 @@ define_data_and_log(){
             --plan-name )       shift
                                 plan_name=$1
                                 ;;
-            --background ) 
-	    background=true
-                                ;;
             * )                 usage
         esac
         shift
@@ -69,12 +64,8 @@ define_data_and_log(){
 	log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
 
 # Run the main function
-if [ "$background" = true ]; then
-	echo "Import started, log file: $log_file"
- 	main 2>&1 &
-else
-	main
-fi
+echo "Import started, log file: $log_file"
+main
 
 }
 
