@@ -64,11 +64,11 @@ install_dependencies() {
 	# If installation is needed, update package list and install missing packages
 	if [ "$install_needed" = true ]; then
  	    log "Updating package manager.."
-	    apt-get update
+	    apt-get update  >/dev/null 2>&1
 	    for cmd in "${!commands[@]}"; do
 	        if ! command_exists "$cmd"; then
 	 		log "Installing ${commands[$cmd]}"
-	            apt-get install -y "${commands[$cmd]}"
+	            apt-get install -y "${commands[$cmd]}"  >/dev/null 2>&1
 	        fi
 	    done
      	    log "Dependencies installed successfully."
@@ -132,22 +132,22 @@ check_if_valid_cp_backup(){
         cpmove-*.tar.gz)
             log "Identified cpmove backup"
             extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
 	    ;;
         backup-*.tar.gz)
             log "Identified full or partial cPanel backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
             ;;
         *.tar.gz)
             log "Identified gzipped tar backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
             ;;
         *.tgz)
             log "Identified tgz backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tar)
             log "Identified tar backup"
