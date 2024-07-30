@@ -370,6 +370,7 @@ restore_php_version() {
 # Function to restore MySQL databases and users
 restore_mysql() {
     local mysql_dir="$1"
+    local sandbox_warning_logged=false
     
     log "Restoring MySQL databases for user $cpanel_username"
     
@@ -381,9 +382,12 @@ restore_mysql() {
 	
 	    first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
      		if echo "$first_line" | grep -q "$text_to_check"; then
-	        log "WARNING: Database dump was created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
-	        # Remove the first line and save the changes to the same file
-	        tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
+       			 if [ "$sandbox_warning_logged" = false ]; then
+			        log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
+	   			sandbox_warning_logged=true
+			 fi
+				# Remove the first line and save the changes to the same file
+			        tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
 	    fi
 	}    
 
@@ -614,11 +618,10 @@ main() {
     parse_cpanel_metadata  #TODO: extract single file and get data from it!
 
     # Create user
-    cpanel_password="repalcedinnextfunc"
-    create_new_user "$cpanel_username" "$cpanel_password" "$cpanel_email" "$plan_name"
+    #cpanel_password="repalcedinnextfunc"
+    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
 
-# Set password
-    convert_cpanel_password   #TODO: convert hash from cp
+    #convert_cpanel_password   #TODO: convert hash from cp
 
 
     # Restore PHP version
@@ -643,7 +646,10 @@ main() {
 
 		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
 		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
-		    opencli domains-add "$main_domain" "$cpanel_username"  >/dev/null 2>&1
+      			output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"
 		else
 		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
 		fi
@@ -659,7 +665,10 @@ main() {
      
 		if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
 		    log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
-		    opencli domains-add "$domain" "$cpanel_username"
+      			output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"     
 		else
 		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
 		fi    
