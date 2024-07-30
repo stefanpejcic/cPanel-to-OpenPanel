@@ -1,7 +1,8 @@
 #!/bin/bash
 
 script_dir=$(dirname "$0")
-timestamp="$(date +'%Y-%m-%d_%H-%M-%S')"
+timestamp="$(date +'%Y-%m-%d_%H-%M-%S')" #used by log file name 
+start_time=$(date +%s) #used to calculate elapsed time at the end
 
 
 
@@ -710,6 +711,28 @@ echo "nothing yet.."
 # Main execution
 main() {
 
+echo -e "
+------------------ STARTING CPANEL ACCOUNT IMPORT ------------------
+--------------------------------------------------------------------
+
+Currently supported features:
+- FILES AND FOLDERS
+- MAIN AND ADDON DOMAINS
+- DNS ZONES
+- MYSQL DATABASES, USERS AND THEIR GRANTS
+- SSH KEYS
+- CRONJOBS
+- WP SITES FROM WPTOOLKIT OR SOFTACULOUS
+
+emails, nodejs/python apps and postgres are not yet supported!
+
+--------------------------------------------------------------------
+  if you experience any errors with this script, pelase report to
+    https://github.com/stefanpejcic/cPanel-to-OpenPanel/issues
+--------------------------------------------------------------------
+"
+
+
 log "Log file: $log_file"
 
     # PRE-RUN CHECKS
@@ -756,7 +779,18 @@ log "Log file: $log_file"
     log "Cleaning up temporary files"
     rm -rf "$backup_dir"
 
+	end_time=$(date +%s)
+	elapsed=$(( end_time - start_time ))
+	hours=$(( elapsed / 3600 ))
+	minutes=$(( (elapsed % 3600) / 60 ))
+	seconds=$(( elapsed % 60 ))
+	
+	log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
+
     log "SUCCESS: Import for user $cpanel_username completed successfully."
+
+
+
 
 }
 
