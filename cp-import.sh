@@ -45,6 +45,7 @@ install_dependencies() {
 	# needed commands
 	declare -A commands=(
 	    ["tar"]="tar"
+	    ["parallel"]="parallel"
 	    ["unzip"]="unzip"
 	    ["jq"]="jq"
 	    ["mysql"]="mysql-client"
@@ -484,7 +485,7 @@ restore_dns_zones() {
         for zone_file in "$real_backup_files_path/dnszones"/*; do
             local zone_name=$(basename "$zone_file")
             log "Importing DNS zone: $zone_name"
-            opencli dns-import-zone "$zone_file"
+            ###opencli dns-import-zone "$zone_file"
         done
     else
         log "No DNS zones found to restore"
@@ -495,7 +496,8 @@ restore_dns_zones() {
 restore_files() {
 
     log "Restoring files for user $cpanel_username to /home/$cpanel_username/"
-    cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/"  #TODO: use parallel or xargs
+    #cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/"  #TODO: use parallel or xargs
+    find "$real_backup_files_path/homedir" -type f | parallel -j+0 mv -t "/home/$cpanel_username/"
     docker exec $cpanel_username bash -c "chown -R 1000:34 /home/$cpanel_username"
 }
 
@@ -671,48 +673,28 @@ main() {
 		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
 		fi    
 	done
-
 	log "Finished importing $current_domain_count domains"
-
-: '
-        for domain_file in "$real_backup_files_path/userdata"/*.yaml; do
-            domain=$(basename "$domain_file" .yaml)
-            domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
-            restore_website "$domain" "$domain_path"
-        done
-
-        for subdomain_file in "$real_backup_files_path/userdata"/*_subdomains.yaml; do
-            subdomain=$(basename "$subdomain_file" _subdomains.yaml)
-            subdomain_path=$(grep -oP 'documentroot: \K\S+' "$subdomain_file")
-            full_subdomain="$subdomain.$main_domain"
-            restore_website "$full_subdomain" "$subdomain_path"
-        done
-'
- 
     fi
 
     # Restore other components
     restore_mysql "$mysqldir"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
-    restore_dns_zones
+    restore_dns_zones  #TODO
     restore_files
-    restore_wordpress "$real_backup_files_path" "$cpanel_username"
-    restore_cron "$real_backup_files_path" "$cpanel_username"
+    restore_wordpress "$real_backup_files_path" "$cpanel_username" #TO REMOVE
+    restore_cron "$real_backup_files_path" "$cpanel_username" #TODO
 
     # Fix file permissions for the entire home directory
-    log "Fixing file permissions for user $cpanel_username"
-    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
+    log "Fixing file permissions for user $cpanel_username" #TODO
+    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username" #TODO
 
     # Cleanup
     log "Cleaning up temporary files"
     rm -rf "$backup_dir"
 
-    log "Restore completed successfully."
+    log "SUCCESS: Import for user $cpanel_username completed successfully."
 }
-
-         ## POST-RUN CHECKS
-
 
 
 ###############################################################
