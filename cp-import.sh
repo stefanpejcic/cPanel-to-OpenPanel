@@ -420,22 +420,30 @@ restore_mysql() {
         # STEP 2. start mysql for user
             log "Initializing MySQL service for user"
             docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
-
-        # STEP 3. create and import databases
-        for db_file in "$mysql_dir"/*.create; do
-            local db_name=$(basename "$db_file" .create)
+	
+	# STEP 3. create and import databases
+ 	total_databases=$(ls "$mysql_dir"/*.create | wc -l)
+	log "Starting import for $total_databases MySQL databases"
+	if [ "$total_databases" -gt 0 ]; then
+	current_step=1
+	        for db_file in "$mysql_dir"/*.create; do
+	            local db_name=$(basename "$db_file" .create)
 	   
-            log "Creating database: $db_name"           
-	    apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-	    docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-            docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
-
-            log "Restoring database: $db_name"
-	    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
-            docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
-        done
-        
+	            log "Creating database: $db_name (${current_step}/${total_databases})"           
+		    apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
+		    docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
+	            docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
+	
+	            log "Importing tables for database: $db_name"
+		    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
+	            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
+	            docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
+		    current_step=$((current_step + 1))
+	        done
+	 log "Finished processing $current_step databases"
+	 else
+	    log "WARNING: No MySQL databases found"
+	fi
         # STEP 4. import grants 
             log "Importing database grants"
 	    python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql-auth.json ${real_backup_files_path}/mysql.sql-auth.sql
