@@ -531,15 +531,15 @@ restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
     if [ -d "$real_backup_files_path/dnszones" ]; then
         for zone_file in "$real_backup_files_path/dnszones"/*; do
-            local zone_name=$(basename "$zone_file")
+	    local zone_name=$(basename "${zone_file%.db}")
 	        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
 	        log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
-	        sed -i "s/$old_ip/$new_ip/g" $real_backup_files_path/dnszones/$zone_name
+	        sed -i "s/$old_ip/$new_ip/g" $real_backup_files_path/dnszones/$zone_file
 
         log "Importing DNS zone: $zone_name"
 	
 	# Paths to your files
-	file1="$real_backup_files_path/dnszones/$zone_name"
+	file1="$real_backup_files_path/dnszones/$zone_file"
 	file2="/etc/bind/zones/${zone_name}.zone"
 	
 	# Temporary files to store intermediate results
@@ -556,23 +556,12 @@ restore_dns_zones() {
 	cat "$temp_file2" >> "$temp_file1"
 	
 	# Move the merged content to the final file
-	mv "$temp_file1" "$real_backup_files_path/dnszones/$zone_name"
+	mv "$temp_file1" "$file2"
 	
 	# Clean up
 	rm "$temp_file1" "$temp_file2"
 	
 	echo "Files have been merged successfully."
-
-
-
-
-
-
-
-
-
-
-
 
 
 
