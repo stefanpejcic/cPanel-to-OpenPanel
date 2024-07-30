@@ -1,4 +1,4 @@
-# cPanel-to-OpenPanel
+# cPanel 2 OpenPanel user import
 Free OpenPanel module to import cPanel backup in OpenPanel
 
 Maintained by [CodeWithJuber](https://github.com/CodeWithJuber)
