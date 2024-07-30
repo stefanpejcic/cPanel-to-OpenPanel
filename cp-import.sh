@@ -334,10 +334,10 @@ create_new_user() {
     local email="$3"
     local plan_name="$4"
 
-	create_user_command=$(opencli user-add "$username" "$password" "$email" "$plan_name" 2>&1)
+	create_user_command=$(opencli user-add "$cpanel_username" "$password" "$email" "$plan_name" 2>&1)
  
 	if echo "$create_user_command" | grep -q "Successfully added user"; then
-	    log "User $$username successfully created."
+	    log "User $$cpanel_username successfully created."
 	else
 	    log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
 	    log "Command output: $create_user_command"
