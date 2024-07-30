@@ -1,15 +1,11 @@
 #!/bin/bash
 
 script_dir=$(dirname "$0")
+timestamp="$(date +'%Y-%m-%d_%H-%M-%S')"
+
+
 
 set -eo pipefail
-
-# root user is needed
-if [[ $EUID -ne 0 ]]; then
-    log "This script must be run as root or with sudo privileges"
-    exit 1
-fi
-
 
 ###############################################################
 # HELPER FUNCTIONS
@@ -22,8 +18,57 @@ usage() {
 }
 
 log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
+	local message="$1"
+	#output to user
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $message"
+	# save in log
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $message" >> "$log_file"
 }
+
+
+define_data_and_log(){
+    local backup_location=""
+    local plan_name=""
+
+	# root user is needed
+	if [[ $EUID -ne 0 ]]; then
+	    log "This script must be run as root or with sudo privileges"
+	    exit 1
+	fi
+
+
+    # Parse command-line arguments
+    while [ "$1" != "" ]; do
+        case $1 in
+            --backup-location ) shift
+                                backup_location=$1
+                                ;;
+            --plan-name )       shift
+                                plan_name=$1
+                                ;;
+            * )                 usage
+        esac
+        shift
+    done
+
+
+    # Validate required parameters
+    if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
+        usage
+    fi
+
+	# Format log file
+	base_name="$(basename "$backup_location")"
+	base_name_no_ext="${base_name%.*}" 
+ 	local log_dir="/var/log/openpanel/admin/imports"
+  	mkdir -p $log_dir
+	log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
+
+# Run the main function
+main 
+
+}
+
 
 handle_error() {
     log "Error occurred in function '$1' on line $2"
@@ -332,17 +377,18 @@ check_if_user_exists(){
 # Function to create or get user
 create_new_user() {
     local username="$1"
-    local password="$2"
     local email="$3"
     local plan_name="$4"
 
-	create_user_command=$(opencli user-add "$cpanel_username" "$password" "$email" "$plan_name" 2>&1)
- 
+	create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$create_user_command"
+   
 	if echo "$create_user_command" | grep -q "Successfully added user"; then
-	    log "User $cpanel_username successfully created."
+	    :
 	else
 	    log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
-	    log "Command output: $create_user_command"
 	    exit 1
 	fi
 }
@@ -608,11 +654,27 @@ restore_cron() {
 
     log "Restoring cron jobs for user $cpanel_username"
     if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
-        crontab -u "$username" "$real_backup_files_path/cron/crontab"
-        docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username
-        docker exec $cpanel_username bash -c "service cron restart"
+    
+ 			# exclude shell and email variables from file!
+    			sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
 
-	docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
+      			output=$(docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"
+   
+      			output=$(docker exec $cpanel_username bash -c "crontab -u $cpanel_username /var/spool/cron/crontabs/$cpanel_username" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"
+
+      			output=$(docker exec $cpanel_username bash -c "service cron restart" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"
+
+ 
+	docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh  >/dev/null 2>&1
 
     else
         log "No cron jobs found to restore"
@@ -647,28 +709,8 @@ echo "nothing yet.."
 
 # Main execution
 main() {
-    local backup_location=""
-    local plan_name=""
 
-    # Parse command-line arguments
-    while [ "$1" != "" ]; do
-        case $1 in
-            --backup-location ) shift
-                                backup_location=$1
-                                ;;
-            --plan-name )       shift
-                                plan_name=$1
-                                ;;
-            * )                 usage
-        esac
-        shift
-    done
-
-    # Validate required parameters
-    if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
-        usage
-    fi
-
+log "Log file: $log_file"
 
     # PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
@@ -699,12 +741,13 @@ main() {
     restore_domains
     restore_files
     restore_mysql "$mysqldir"
+    restore_cron
     restore_php_version "$cpanel_username" "$php_version"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
     restore_dns_zones  #TODO
     restore_wordpress "$real_backup_files_path" "$cpanel_username" #TO REMOVE
-    restore_cron
+    
 
     log "Fixing file permissions for user $cpanel_username" #TODO
     opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username" #TODO
@@ -714,10 +757,11 @@ main() {
     rm -rf "$backup_dir"
 
     log "SUCCESS: Import for user $cpanel_username completed successfully."
+
 }
 
 
 ###############################################################
 
-# Run the main function
-main "$@"
+# MAIN FUNCTION
+define_data_and_log "$@"
