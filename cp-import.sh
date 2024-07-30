@@ -46,6 +46,7 @@ install_dependencies() {
 	declare -A commands=(
 	    ["tar"]="tar"
 	    ["parallel"]="parallel"
+	    ["rsync"]="rsync"
 	    ["unzip"]="unzip"
 	    ["jq"]="jq"
 	    ["mysql"]="mysql-client"
@@ -132,32 +133,32 @@ check_if_valid_cp_backup(){
         cpmove-*.tar.gz)
             log "Identified cpmove backup"
             extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
 	    ;;
         backup-*.tar.gz)
             log "Identified full or partial cPanel backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tar.gz)
             log "Identified gzipped tar backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tgz)
             log "Identified tgz backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.tar)
             log "Identified tar backup"
             extraction_command="tar -xf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.zip)
             log "Identified zip backup"
             extraction_command="unzip"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *)
             log "Unrecognized backup format: $backup_filename"
@@ -403,6 +404,7 @@ restore_mysql() {
         # STEP 2. start mysql for user
             log "Initializing MySQL service for user"
             docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
+	    docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
 	
 	# STEP 3. create and import databases
  	total_databases=$(ls "$mysql_dir"/*.create | wc -l)
@@ -494,21 +496,57 @@ restore_dns_zones() {
 
 # Function to restore files
 restore_files() {
+    du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
+    log "Restoring files ($du_needed_for_home/) to /home/$cpanel_username/"
 
-    log "Restoring files for user $cpanel_username to /home/$cpanel_username/"
-    #cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/"  #TODO: use parallel or xargs
-    find "$real_backup_files_path/homedir" -type f | parallel -j+0 mv -t "/home/$cpanel_username/"
+    #log "DEBUG: $real_backup_files_path/homedir du before:"
+    #du -sh "$real_backup_files_path/homedir"
+    
+    #log "DEBUG: /home/$cpanel_username/ su before:"
+    #du -sh "/home/$cpanel_username/"
+
+	rsync -av --progress "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+	  log "$line"
+	done
+    #TODO: use parallel or xargs
+    
+    #output=$(cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1)
+    #	while IFS= read -r line; do
+    #   log "$line"
+    # done <<< "$output"
+
+
+	log "Finished transferring files, comparing to source.."
+	original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
+	copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
+	
+	if [[ "$original_size" -eq "$copied_size" ]]; then
+	  log "The original and target directories have the same size."
+	else
+	  log "WARNING: The original and target directories differ in size after restore."
+	  log "Original size: $original_size bytes"
+	  log "Target size:   $copied_size bytes"
+	fi
+	
+
+    #log "DEBUG: $real_backup_files_path/homedir du after:"
+    #du -sh "$real_backup_files_path/homedir"
+    
+    #log "DEBUG: /home/$cpanel_username/ su after:"
+    #du -sh "/home/$cpanel_username/"
+
+    
     docker exec $cpanel_username bash -c "chown -R 1000:34 /home/$cpanel_username"
 }
 
 # Function to restore WordPress sites
 restore_wordpress() {
-    local backup_dir="$1"
+    local real_backup_files_path="$1"
     local username="$2"
 
     log "Restoring WordPress sites for user $username"
-    if [ -d "$backup_dir/wptoolkit" ]; then
-        for wp_file in "$backup_dir/wptoolkit"/*.json; do
+    if [ -d "$real_backup_files_path/wptoolkit" ]; then
+        for wp_file in "$real_backup_files_path/wptoolkit"/*.json; do
             log "Importing WordPress site from: $wp_file"
             opencli wp-import "$username" "$wp_file"
         done
@@ -517,19 +555,64 @@ restore_wordpress() {
     fi
 }
 
+
+restore_domains(){
+    # Restore addon domains and subdomains
+    if [ -d "$real_backup_files_path/userdata" ]; then
+
+	files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
+        domains_total_count=${#files[@]}
+        current_domain_count=0
+
+	# main domain		 	
+ 	if [ -d "$homedir/public_html" ]; then
+	   	current_domain_count=$((current_domain_count + 1))
+	    	domains_total_count=$((domains_total_count + 1))
+
+		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
+		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
+      			output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"
+		else
+		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
+		fi
+   	fi
+
+
+ 	# addons
+	for domain_file in "${files[@]}"; do
+	    domain=$(basename "$domain_file")
+	    #domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
+     	    current_domain_count=$((current_domain_count + 1))
+	    log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
+     
+		if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+		    log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
+      			output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+			 while IFS= read -r line; do
+		    		log "$line"
+			done <<< "$output"     
+		else
+		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
+		fi    
+	done
+	log "Finished importing $current_domain_count domains"
+    fi
+}
+
+
 # Function to restore cron jobs
 restore_cron() {
-    local backup_dir="$1"
-    local username="$2"
 
-    log "Restoring cron jobs for user $username"
-    if [ -f "$backup_dir/cron/$username" ]; then
-        crontab -u "$username" "$backup_dir/cron/crontab"
-        docker cp $backup_dir/cron/$username $username:/var/spool/cron/crontabs/$username
-        docker exec $username bash -c "service cron restart"
+    log "Restoring cron jobs for user $cpanel_username"
+    if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
+        crontab -u "$username" "$real_backup_files_path/cron/crontab"
+        docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username
+        docker exec $cpanel_username bash -c "service cron restart"
 
-        # TODO: start cron service for user
-        #docker exec $username sed CRON_STATUS="on" /etc/entrypoint.sh'
+	docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
 
     else
         log "No cron jobs found to restore"
@@ -587,7 +670,7 @@ main() {
     fi
 
 
-    ################# PRE-RUN CHECKS
+    # PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
     check_if_disk_available
     check_if_user_exists
@@ -595,97 +678,34 @@ main() {
     install_dependencies
     get_server_ipv4 #used in myhsql grants
 
-    # Create a unique temporary directory
+    # unique
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
-
-         ## RUN PROCESS
-
-
-
-    
-    # Extract backup
+   
+    # extract
     extract_cpanel_backup "$backup_location" "$backup_dir"
-
-	# backup extracted files
     real_backup_files_path=$(find "$backup_dir" -type f -name "version" | head -n 1 | xargs dirname)
     log "Extracted backup folder: $real_backup_files_path"
     
-    # Locate important directories
+    # locate important directories
     locate_backup_directories
+    parse_cpanel_metadata
 
-    # Parse cPanel metadata
-    parse_cpanel_metadata  #TODO: extract single file and get data from it!
-
-    # Create user
-    #cpanel_password="repalcedinnextfunc"
+    # create new user
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
-
     #convert_cpanel_password   #TODO: convert hash from cp
 
-
-    # Restore PHP version
-    restore_php_version "$cpanel_username" "$php_version"
-
-    # Restore main domain 	#THIS currently runs 2x
-    #if [ -d "$homedir/public_html" ]; then
-    #    restore_website "$main_domain" "$homedir/public_html"
-    #fi
-
-    # Restore addon domains and subdomains
-    if [ -d "$real_backup_files_path/userdata" ]; then
-
-	files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
-        domains_total_count=${#files[@]}
-        current_domain_count=0
-
-	# main domain		 	
- 	if [ -d "$homedir/public_html" ]; then
-	   	current_domain_count=$((current_domain_count + 1))
-	    	domains_total_count=$((domains_total_count + 1))
-
-		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
-		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
-      			output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"
-		else
-		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
-		fi
-   	fi
-
-
- 	# addons
-	for domain_file in "${files[@]}"; do
-	    domain=$(basename "$domain_file")
-	    #domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
-     	    current_domain_count=$((current_domain_count + 1))
-	    log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
-     
-		if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-		    log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
-      			output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"     
-		else
-		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
-		fi    
-	done
-	log "Finished importing $current_domain_count domains"
-    fi
-
-    # Restore other components
+    # restore data
+    restore_domains
+    restore_files
     restore_mysql "$mysqldir"
+    restore_php_version "$cpanel_username" "$php_version"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
     restore_dns_zones  #TODO
-    restore_files
     restore_wordpress "$real_backup_files_path" "$cpanel_username" #TO REMOVE
-    restore_cron "$real_backup_files_path" "$cpanel_username" #TODO
+    restore_cron
 
-    # Fix file permissions for the entire home directory
     log "Fixing file permissions for user $cpanel_username" #TODO
     opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username" #TODO
 
