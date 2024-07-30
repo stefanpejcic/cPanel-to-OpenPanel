@@ -536,7 +536,7 @@ restore_files() {
     #du -sh "/home/$cpanel_username/"
 
     
-    docker exec $cpanel_username bash -c "chown -R 1000:34 /home/$cpanel_username"
+    docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
 # Function to restore WordPress sites
