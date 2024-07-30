@@ -493,12 +493,10 @@ restore_dns_zones() {
 
 # Function to restore files
 restore_files() {
-    local backup_dir="$1"
-    local username="$2"
 
-    log "Restoring files for user $username to /home/$username/"
-    cp -r "$backup_dir/homedir" "/home/$username/"  #TODO: use parallel or xargs
-    docker exec $username bash -c "chown -R 1000:34 /home/$username"
+    log "Restoring files for user $cpanel_username to /home/$cpanel_username/"
+    cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/"  #TODO: use parallel or xargs
+    docker exec $cpanel_username bash -c "chown -R 1000:34 /home/$cpanel_username"
 }
 
 # Function to restore WordPress sites
@@ -698,7 +696,7 @@ main() {
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
     restore_dns_zones
-    restore_files "$real_backup_files_path" "$cpanel_username"
+    restore_files
     restore_wordpress "$real_backup_files_path" "$cpanel_username"
     restore_cron "$real_backup_files_path" "$cpanel_username"
 
