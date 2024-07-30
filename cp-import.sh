@@ -121,6 +121,8 @@ validate_plan_exists(){
 check_if_valid_cp_backup(){
     local backup_location="$1"
 
+    ARCHIVE_SIZE=$(stat -c%s "$backup_location")
+
     # Identify the backup type
     local backup_filename=$(basename "$backup_location")
     extraction_command=""
@@ -129,26 +131,32 @@ check_if_valid_cp_backup(){
         cpmove-*.tar.gz)
             log "Identified cpmove backup"
             extraction_command="tar -xzf"
-            ;;
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+	    ;;
         backup-*.tar.gz)
             log "Identified full or partial cPanel backup"
             extraction_command="tar -xzf"
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.tar.gz)
             log "Identified gzipped tar backup"
             extraction_command="tar -xzf"
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.tgz)
             log "Identified tgz backup"
             extraction_command="tar -xzf"
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.tar)
             log "Identified tar backup"
             extraction_command="tar -xf"
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.zip)
             log "Identified zip backup"
             extraction_command="unzip"
+	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *)
             log "Unrecognized backup format: $backup_filename"
@@ -156,6 +164,39 @@ check_if_valid_cp_backup(){
             ;;
     esac
 }
+
+
+check_if_disk_available(){
+
+#idealy should run after creating user
+
+TMP_DIR="/tmp"
+HOME_DIR="/home"
+
+# Get available space in /tmp and home directories in bytes
+AVAILABLE_TMP=$(df --output=avail "$TMP_DIR" | tail -n 1)
+AVAILABLE_HOME=$(df --output=avail "$HOME_DIR" | tail -n 1)
+
+AVAILABLE_TMP=$(($AVAILABLE_TMP * 1024))
+AVAILABLE_HOME=$(($AVAILABLE_HOME * 1024))
+
+# Check if there's enough space
+if [[ $AVAILABLE_TMP -ge $EXTRACTED_SIZE && $AVAILABLE_HOME -ge $EXTRACTED_SIZE ]]; then
+    lig "There is enough disk space to extract the archive and copy it to the home directory."
+else
+    log "FATAL ERROR: Not enough disk space."
+    if [[ $AVAILABLE_TMP -lt $EXTRACTED_SIZE ]]; then
+        log "Insufficient space in /tmp."
+    fi
+    if [[ $AVAILABLE_HOME -lt $EXTRACTED_SIZE ]]; then
+        log "Insufficient space in the /home directory."
+    fi
+    exit 1
+fi
+
+}
+
+
 
 # Extract
 extract_cpanel_backup() {
@@ -558,6 +599,7 @@ main() {
 
     ################# PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
+    check_if_disk_available
     check_if_user_exists
     validate_plan_exists
     install_dependencies
