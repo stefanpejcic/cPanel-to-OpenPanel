@@ -544,22 +544,16 @@ restore_dns_zones() {
 restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring files ($du_needed_for_home/) to /home/$cpanel_username/"
-
-    #log "DEBUG: $real_backup_files_path/homedir du before:"
-    #du -sh "$real_backup_files_path/homedir"
-    
-    #log "DEBUG: /home/$cpanel_username/ su before:"
-    #du -sh "/home/$cpanel_username/"
-
-	rsync -av --progress "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-	  log "$line"
-	done
+   	#rsync -av --progress "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+	#  log "$line"
+	#done
+ 
     #TODO: use parallel or xargs
     
-    #output=$(cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1)
-    #	while IFS= read -r line; do
-    #   log "$line"
-    # done <<< "$output"
+    output=$(cp -r "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1)
+    	while IFS= read -r line; do
+       log "$line"
+     done <<< "$output"
 
 
 	log "Finished transferring files, comparing to source.."
@@ -573,15 +567,7 @@ restore_files() {
 	  log "Original size: $original_size bytes"
 	  log "Target size:   $copied_size bytes"
 	fi
-	
-
-    #log "DEBUG: $real_backup_files_path/homedir du after:"
-    #du -sh "$real_backup_files_path/homedir"
-    
-    #log "DEBUG: /home/$cpanel_username/ su after:"
-    #du -sh "/home/$cpanel_username/"
-
-    
+	   
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
