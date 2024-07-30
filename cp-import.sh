@@ -1,5 +1,5 @@
 #!/bin/bash
-
+pid=$$
 script_dir=$(dirname "$0")
 timestamp="$(date +'%Y-%m-%d_%H-%M-%S')" #used by log file name 
 start_time=$(date +%s) #used to calculate elapsed time at the end
@@ -65,6 +65,7 @@ define_data_and_log(){
 
 # Run the main function
 echo "Import started, log file: $log_file"
+
 main
 
 }
@@ -750,6 +751,7 @@ emails, nodejs/python apps and postgres are not yet supported!
 "
 
 log "Log file: $log_file"
+log "PID: $pid"
 
     # PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
