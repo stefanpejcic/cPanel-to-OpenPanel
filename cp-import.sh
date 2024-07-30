@@ -337,7 +337,7 @@ create_new_user() {
 	create_user_command=$(opencli user-add "$cpanel_username" "$password" "$email" "$plan_name" 2>&1)
  
 	if echo "$create_user_command" | grep -q "Successfully added user"; then
-	    log "User $$cpanel_username successfully created."
+	    log "User $cpanel_username successfully created."
 	else
 	    log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
 	    log "Command output: $create_user_command"
@@ -366,28 +366,6 @@ restore_php_version() {
 	  fi
 }
 
-# Function to restore domains
-restore_domains() {
-    local username="$1"
-    local domain="$2"
-    local path="$3"
-
-    log "Restoring domain $domain for user $username"
-
-	if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-	    log "Restoring domain $domain for user $username"
-	    ## TODO FOR STEFAN ## opencli domains-add "$domain" "$username"
-     	    log "Added domain $domain" # fake until then..
-	else
-	    log "WARNING: Domain $domain already exists and will not be added to this user."
-	fi
-
-
-
-
-
-    
-}
 
 # Function to restore MySQL databases and users
 restore_mysql() {
@@ -425,11 +403,11 @@ restore_mysql() {
  	total_databases=$(ls "$mysql_dir"/*.create | wc -l)
 	log "Starting import for $total_databases MySQL databases"
 	if [ "$total_databases" -gt 0 ]; then
-	current_step=1
+	current_db=1
 	        for db_file in "$mysql_dir"/*.create; do
 	            local db_name=$(basename "$db_file" .create)
 	   
-	            log "Creating database: $db_name (${current_step}/${total_databases})"           
+	            log "Creating database: $db_name (${current_db}/${total_databases})"           
 		    apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
 		    docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
 	            docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
@@ -438,9 +416,9 @@ restore_mysql() {
 		    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
 	            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
 	            docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
-		    current_step=$((current_step + 1))
+		    current_db=$((current_db + 1))
 	        done
-	 log "Finished processing $current_step databases"
+	 log "Finished processing $current_db databases"
 	 else
 	    log "WARNING: No MySQL databases found"
 	fi
@@ -646,32 +624,64 @@ main() {
     # Restore PHP version
     restore_php_version "$cpanel_username" "$php_version"
 
-    # Restore Domains and Websites
-    restore_website() {
-        local domain="$1"
-        local path="$2"
-        restore_domains "$cpanel_username" "$domain" "$path"
-    }
-
     # Restore main domain 	#THIS currently runs 2x
     #if [ -d "$homedir/public_html" ]; then
     #    restore_website "$main_domain" "$homedir/public_html"
     #fi
 
     # Restore addon domains and subdomains
-    if [ -d "$backup_dir/userdata" ]; then
-        for domain_file in "$backup_dir/userdata"/*.yaml; do
+    if [ -d "$real_backup_files_path/userdata" ]; then
+
+	files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
+        domains_total_count=${#files[@]}
+        current_domain_count=0
+
+	# main domain		 	
+ 	if [ -d "$homedir/public_html" ]; then
+	   	current_domain_count=$((current_domain_count + 1))
+	    	domains_total_count=$((domains_total_count + 1))
+
+		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
+		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
+		    opencli domains-add "$main_domain" "$cpanel_username"
+		else
+		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
+		fi
+   	fi
+
+
+ 	# addons
+	for domain_file in "${files[@]}"; do
+	    domain=$(basename "$domain_file")
+	    #domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
+     	    current_domain_count=$((current_domain_count + 1))
+	    log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
+     
+		if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+		    log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
+		    opencli domains-add "$domain" "$cpanel_username"
+		else
+		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
+		fi    
+	done
+
+	log "Finished importing $current_domain_count domains"
+
+: '
+        for domain_file in "$real_backup_files_path/userdata"/*.yaml; do
             domain=$(basename "$domain_file" .yaml)
             domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
             restore_website "$domain" "$domain_path"
         done
 
-        for subdomain_file in "$backup_dir/userdata"/*_subdomains.yaml; do
+        for subdomain_file in "$real_backup_files_path/userdata"/*_subdomains.yaml; do
             subdomain=$(basename "$subdomain_file" _subdomains.yaml)
             subdomain_path=$(grep -oP 'documentroot: \K\S+' "$subdomain_file")
             full_subdomain="$subdomain.$main_domain"
             restore_website "$full_subdomain" "$subdomain_path"
         done
+'
+ 
     fi
 
     # Restore other components
@@ -679,9 +689,9 @@ main() {
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
     restore_dns_zones
-    restore_files "$backup_dir" "$cpanel_username"
-    restore_wordpress "$backup_dir" "$cpanel_username"
-    restore_cron "$backup_dir" "$cpanel_username"
+    restore_files "$real_backup_files_path" "$cpanel_username"
+    restore_wordpress "$real_backup_files_path" "$cpanel_username"
+    restore_cron "$real_backup_files_path" "$cpanel_username"
 
     # Fix file permissions for the entire home directory
     log "Fixing file permissions for user $cpanel_username"
