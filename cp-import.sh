@@ -182,7 +182,7 @@ AVAILABLE_HOME=$(($AVAILABLE_HOME * 1024))
 
 # Check if there's enough space
 if [[ $AVAILABLE_TMP -ge $EXTRACTED_SIZE && $AVAILABLE_HOME -ge $EXTRACTED_SIZE ]]; then
-    lig "There is enough disk space to extract the archive and copy it to the home directory."
+    log "There is enough disk space to extract the archive and copy it to the home directory."
 else
     log "FATAL ERROR: Not enough disk space."
     if [[ $AVAILABLE_TMP -lt $EXTRACTED_SIZE ]]; then
