@@ -550,7 +550,7 @@ restore_files() {
  
     #TODO: use parallel or xargs
     
-    output=$(cp -r "$real_backup_files_path/homedir/*" "/home/$cpanel_username/" 2>&1)
+    output=$(cp -r "$real_backup_files_path/homedir/." "/home/$cpanel_username/" 2>&1)
     	while IFS= read -r line; do
        log "$line"
      done <<< "$output"
