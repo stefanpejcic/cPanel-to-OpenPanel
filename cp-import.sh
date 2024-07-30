@@ -745,8 +745,8 @@ log "Log file: $log_file"
     #convert_cpanel_password   #TODO: convert hash from cp
 
     # restore data
-    restore_domains
     restore_files
+    restore_domains
     restore_mysql "$mysqldir"
     restore_cron
     restore_php_version "$cpanel_username" "$php_version"
