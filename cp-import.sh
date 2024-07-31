@@ -677,6 +677,7 @@ restore_domains(){
         # addons
         for domain_file in "${files[@]}"; do
             domain=$(basename "$domain_file")
+            domain=${domain%.$main_domain} # strip main domain suffix since cp creates zone as subdomain of main domain..
             current_domain_count=$((current_domain_count + 1))
             log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
      
