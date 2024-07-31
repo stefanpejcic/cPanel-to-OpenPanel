@@ -139,7 +139,7 @@ get_server_ipv4(){
 }
 
 validate_plan_exists(){
-    if ! opencli plan-list | grep -q "$plan_name"; then
+    if ! opencli plan-list | grep -qw "$plan_name"; then
         log "FATAL ERROR: Plan name '$plan_name' does not exist."
         exit 1
     fi
