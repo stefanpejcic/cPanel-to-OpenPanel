@@ -79,7 +79,7 @@ command_exists() {
 }
 
 install_dependencies() {
-    log "Checking dependencies..."
+    log "Checking and installing dependencies..."
     
     install_needed=false
     
@@ -104,18 +104,30 @@ install_dependencies() {
 
     # If installation is needed, update package list and install missing packages
     if [ "$install_needed" = true ]; then
-        log "Updating package manager.."
-        apt-get update  >/dev/null 2>&1
+        log "Updating package manager..."
+        
+        # Hold kernel packages to prevent upgrades
+        sudo apt-mark hold linux-image-generic linux-headers-generic
+
+        # Update package list without upgrading
+        sudo apt-get update -y >/dev/null 2>&1
+
         for cmd in "${!commands[@]}"; do
             if ! command_exists "$cmd"; then
                 log "Installing ${commands[$cmd]}"
-                apt-get install -y "${commands[$cmd]}"  >/dev/null 2>&1
+                # Install package without upgrading or installing recommended packages
+                sudo apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
             fi
         done
+
+        # Unhold kernel packages
+        sudo apt-mark unhold linux-image-generic linux-headers-generic
+
         log "Dependencies installed successfully."
+    else
+        log "All required dependencies are already installed."
     fi
 }
-
 get_server_ipv4(){
     # Get server ipv4 from ip.openpanel.co or ifconfig.me
     new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
