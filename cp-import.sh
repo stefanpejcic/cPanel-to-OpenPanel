@@ -650,7 +650,7 @@ restore_files() {
     rsync -a --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
         log "$line"
     done
-
+    
     log "Finished transferring files, comparing to source.."
     original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
     copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
@@ -662,7 +662,15 @@ restore_files() {
         log "Original size: $original_size bytes"
         log "Target size:   $copied_size bytes"
     fi
-       
+
+    # Move all files from public_html to main domain dir
+    log "Moving main domain files from public_html to $main_domain directory."
+    mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain
+    #shopt -s dotglob
+    #mv "/home/$cpanel_username/public_html"/* "/home/$cpanel_username/$main_domain"/
+    #shopt -u dotglob
+    
+    log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
