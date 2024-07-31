@@ -24,7 +24,8 @@ log() {
 
 handle_error() {
     log "ERROR: An error occurred in function '$1' on line $2"
-    cleanup
+    #####cleanup
+    echo "PATH OF FOLDR: $backup_dir"
     exit 1
 }
 
