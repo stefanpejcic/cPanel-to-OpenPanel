@@ -389,32 +389,13 @@ grant_phpmyadmin_access() {
     fi
 
     log "Granting phpMyAdmin access to all databases for user $username"
-
-    # Get the phpMyAdmin username (adjust this if your naming convention is different)
-    phpmyadmin_user="pma_${username}"
-
-    # SQL command to grant access
-    sql_command="
-    SELECT CONCAT('GRANT ALL PRIVILEGES ON ', table_schema, '.* TO \"$phpmyadmin_user\"@\"%\";')
-    FROM information_schema.schemata
-    WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
-    AND schema_name LIKE '${username}\\_%';"
-
-    # Execute the SQL command
+    # https://github.com/stefanpejcic/OpenPanel/blob/148b5e482f7bde4850868ba5cf85717538770882/docker/apache/phpmyadmin/pma.php#L13C44-L13C54
+    phpmyadmin_user="phpmyadmin"
+    sql_command="GRANT ALL ON *.* TO 'phpmyadmin'@'localhost'; FLUSH PRIVILEGES;"
     grant_commands=$(docker exec $username mysql -N -e "$sql_command")
+    
+    log "Access granted to phpMyAdmin user for all databases of $username"
 
-    if [ -n "$grant_commands" ]; then
-        echo "$grant_commands" | while read -r grant; do
-            log "Executing: $grant"
-            docker exec $username mysql -e "$grant"
-        done
-
-        # Flush privileges to apply changes
-        docker exec $username mysql -e "FLUSH PRIVILEGES;"
-        log "Access granted to phpMyAdmin user for all databases of $username"
-    else
-        log "No databases found for user $username"
-    fi
 }
 # Function to restore MySQL databases and users
 restore_mysql() {
