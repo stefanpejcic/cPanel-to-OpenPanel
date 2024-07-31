@@ -495,6 +495,7 @@ restore_mysql() {
         log "No MySQL databases found to restore"
     fi
 }
+
 refresh_ssl_file() {
     local username="$1"
     
@@ -503,42 +504,11 @@ refresh_ssl_file() {
         return
     fi
 
-    log "Refreshing SSL file for user $username"
-    
-    # Path to the user's .ssl file
-    ssl_file="/home/$username/.ssl"
-    
-    if [ -f "$ssl_file" ]; then
-        # Backup the original file
-        cp "$ssl_file" "${ssl_file}.bak"
-        
-        # Remove the file to trigger a refresh
-        rm "$ssl_file"
-        
-        # Trigger SSL refresh for the user
-        opencli ssl-refresh "$username"
-        
-        # Wait for the file to be regenerated
-        timeout=30
-        while [ ! -f "$ssl_file" ] && [ $timeout -gt 0 ]; do
-            sleep 1
-            ((timeout--))
-        done
-        
-        if [ -f "$ssl_file" ]; then
-            log "SSL file refreshed successfully for user $username"
-        else
-            log "WARNING: SSL file refresh timed out for user $username"
-            # Restore the backup if refresh failed
-            if [ -f "${ssl_file}.bak" ]; then
-                mv "${ssl_file}.bak" "$ssl_file"
-                log "Restored original SSL file from backup"
-            fi
-        fi
-    else
-        log "WARNING: SSL file not found for user $username"
-    fi
+    log "Creating a list of SSL certificates for user interface"
+    opencli ssl-user "$cpanel_username"
+
 }
+
 # Function to restore SSL certificates
 restore_ssl() {
     local username="$1"
@@ -566,6 +536,7 @@ restore_ssl() {
     else
         log "No SSL certificates found to restore"
     fi
+    
 }
 
 # Function to restore SSH access
