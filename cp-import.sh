@@ -24,8 +24,7 @@ log() {
 
 handle_error() {
     log "ERROR: An error occurred in function '$1' on line $2"
-    #####cleanup
-    echo "PATH OF FOLDR: $backup_dir"
+    cleanup
     exit 1
 }
 
@@ -556,7 +555,7 @@ restore_dns_zones() {
             local zone_name=$(basename "${zone_file%.db}")
             old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
             log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
-            sed -i "s/$old_ip/$new_ip/g" $real_backup_files_path/dnszones/$zone_file
+            sed -i "s/$old_ip/$new_ip/g" $zone_file
 
             log "Importing DNS zone: $zone_name"
     
