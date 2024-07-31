@@ -547,6 +547,14 @@ restore_ssh() {
 restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
 
+
+
+
+            #domain_file="$real_backup_files_path/userdata/$domain"
+            #domain=$(basename "$domain_file")
+
+
+
     if [ "$DRY_RUN" = true ]; then
         log "DRY RUN: Would restore DNS zones for user $cpanel_username"
         return
@@ -649,52 +657,105 @@ restore_wordpress() {
     fi
 }
 
+
+
+
 restore_domains(){
-    # Restore addon domains and subdomains
-    if [ -d "$real_backup_files_path/userdata" ]; then
-        files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
-        domains_total_count=${#files[@]}
-        current_domain_count=0
 
-        # main domain             
-        if [ -d "$homedir/public_html" ]; then
-            current_domain_count=$((current_domain_count + 1))
-            domains_total_count=$((domains_total_count + 1))
 
-            if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore main domain: $main_domain"
-            elif opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
-                log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
-                output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"
-            else
-                log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
-            fi
-        fi
-
-        # addons
-        for domain_file in "${files[@]}"; do
-            domain=$(basename "$domain_file")
-            domain=${domain%.$main_domain} # strip main domain suffix since cp creates zone as subdomain of main domain..
+    create_domain(){
+            domain="$1"
+            type="$2"
+            current_domain_count=0
             current_domain_count=$((current_domain_count + 1))
             log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
      
             if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore addon domain $domain"
+                log "DRY RUN: Would restore $type domain $domain"
             elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
+                log "Restoring $type domain $domain (${current_domain_count}/${domains_total_count})"
                 output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"     
             else
-                log "WARNING: Addon domain $domain already exists and will not be added to this user."
+                log "WARNING: $type domain $domain already exists and will not be added to this user."
             fi    
+    }
+
+
+
+
+
+if [ -f "$real_backup_files_path/userdata/main" ]; then
+    file_path="$real_backup_files_path/userdata/main"
+    
+    # Extract data from the file using `grep` and `sed`
+    main_domain=$(grep '^main_domain:' "$file_path" | sed 's/main_domain: //')
+    parked_domains=$(grep '^parked_domains:' "$file_path" | sed 's/parked_domains: //')
+    sub_domains=$(grep '^sub_domains:' -A 10 "$file_path" | sed -n '/^- /{s/^- //;p}')
+    addon_domains=$(grep '^addon_domains:' -A 10 "$file_path" | sed -n '/^[^ ]/{s/: / /;p}')
+    
+    IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
+    sub_domains_array=()
+    addon_domains_array=()
+    
+    
+    # Parse sub_domains
+    while IFS= read -r domain; do
+        sub_domains_array+=("$domain")
+    done <<< "$sub_domains"
+    
+    # Parse addon_domains
+    while IFS= read -r line; do
+        domain=$(echo "$line" | awk '{print $1}')
+        target=$(echo "$line" | awk '{print $2}')
+        addon_domains_array+=("$domain")
+    done <<< "$addon_domains"
+    
+    
+    log "Processing main (proimary) domain domain.."
+    create_domain "$parked" "main"
+    
+    log "Processing parked (alias) domains.."
+    for parked in "${parked_domains_array[@]}"; do
+        create_domain "$parked" "alias"
+    done
+    
+    log "Processing addon domains.."
+    for addon in "${addon_domains_array[@]}"; do
+        create_domain "$addon" "addon"
+    done
+    
+    
+    
+    # Filter out subdomains that are essentially addon_domain.$main_domain
+    filtered_sub_domains=()
+    for sub_domain in "${sub_domains_array[@]}"; do
+        is_addon=false
+        for addon in "${addon_domains_array[@]}"; do
+            if [[ "$sub_domain" == "$addon.$main_domain" ]]; then
+                is_addon=true
+                break
+            fi
         done
+        if [ "$is_addon" = false ]; then
+            filtered_sub_domains+=("$sub_domain")
+        fi
+    done
+    
+    log "Processing sub-domains.."
+    for filtered_sub in "${filtered_sub_domains[@]}"; do
+        create_domain "$filtered_sub" "subdomain"
+        #TODO: create record in dns zone instead of separate domain if only dns zone and no folder!
+    done
+    
         log "Finished importing $current_domain_count domains"
-    fi
+
+else
+    log "FATAL ERROR: domains file userdata/main is missing in backup file."
+    exit 1
+fi
 }
 
 # Function to restore cron jobs
