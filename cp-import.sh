@@ -660,32 +660,7 @@ restore_wordpress() {
 
 
 
-restore_domains(){
-
-
-    create_domain(){
-            domain="$1"
-            type="$2"
-            current_domain_count=0
-            current_domain_count=$((current_domain_count + 1))
-            log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
-     
-            if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore $type domain $domain"
-            elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                log "Restoring $type domain $domain (${current_domain_count}/${domains_total_count})"
-                output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"     
-            else
-                log "WARNING: $type domain $domain already exists and will not be added to this user."
-            fi    
-    }
-
-
-
-
+restore_domains(){          
 
 if [ -f "$real_backup_files_path/userdata/main" ]; then
     file_path="$real_backup_files_path/userdata/main"
@@ -713,22 +688,7 @@ if [ -f "$real_backup_files_path/userdata/main" ]; then
         addon_domains_array+=("$domain")
     done <<< "$addon_domains"
     
-    
-    log "Processing main (proimary) domain domain.."
-    create_domain "$main_domain" "main"
-    
-    log "Processing parked (alias) domains.."
-    for parked in "${parked_domains_array[@]}"; do
-        create_domain "$parked" "alias"
-    done
-    
-    log "Processing addon domains.."
-    for addon in "${addon_domains_array[@]}"; do
-        create_domain "$addon" "addon"
-    done
-    
-    
-    
+
     # Filter out subdomains that are essentially addon_domain.$main_domain
     filtered_sub_domains=()
     for sub_domain in "${sub_domains_array[@]}"; do
@@ -743,7 +703,58 @@ if [ -f "$real_backup_files_path/userdata/main" ]; then
             filtered_sub_domains+=("$sub_domain")
         fi
     done
+
+
+main_domain_count=1
+addon_domains_count=${#addon_domains_array[@]}
+parked_domains_count=${#parked_domains_array[@]}
+filtered_sub_domains_count=${#filtered_sub_domains[@]}
+
+domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
+
+current_domain_count=0
+
+    create_domain(){
+            domain="$1"
+            type="$2"
+
+            current_domain_count=$((current_domain_count + 1))
+            log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
+     
+            if [ "$DRY_RUN" = true ]; then
+                log "DRY RUN: Would restore $type domain $domain"
+            elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+                log "Restoring $type domain $domain (${current_domain_count}/${domains_total_count})"
+                output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                while IFS= read -r line; do
+                    log "$line"
+                done <<< "$output"     
+            else
+                log "WARNING: $type domain $domain already exists and will not be added to this user."
+            fi    
+    }
+
+
+
+
+
+
+
     
+    log "Processing main (primary) domain.."
+    create_domain "$main_domain" "main"
+    
+    log "Processing parked (alias) domains.."
+    for parked in "${parked_domains_array[@]}"; do
+        create_domain "$parked" "alias"
+    done
+    
+    log "Processing addon domains.."
+    for addon in "${addon_domains_array[@]}"; do
+        create_domain "$addon" "addon"
+    done
+    
+       
     log "Processing sub-domains.."
     for filtered_sub in "${filtered_sub_domains[@]}"; do
         create_domain "$filtered_sub" "subdomain"
