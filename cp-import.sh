@@ -212,10 +212,12 @@ check_if_disk_available(){
     else
         log "FATAL ERROR: Not enough disk space."
         if [[ $AVAILABLE_TMP -lt $EXTRACTED_SIZE ]]; then
-            log "Insufficient space in /tmp."
+            log "Insufficient space in the '/tmp' partition."
+            log "Available: $AVAILABLE_TMP - Needed: $EXTRACTED_SIZE"
         fi
         if [[ $AVAILABLE_HOME -lt $EXTRACTED_SIZE ]]; then
-            log "Insufficient space in the /home directory."
+            log "Insufficient space in the '/home' directory."
+            log "Available: $AVAILABLE_HOME - Needed: $EXTRACTED_SIZE"
         fi
         exit 1
     fi
@@ -559,28 +561,24 @@ restore_dns_zones() {
 
             log "Importing DNS zone: $zone_name"
     
-            # Paths to your files
-            file1="$real_backup_files_path/dnszones/$zone_file"
-            file2="/etc/bind/zones/${zone_name}.zone"
-    
             # Temporary files to store intermediate results
-            temp_file1=$(mktemp)
-            temp_file2=$(mktemp)
+            temp_file_of_original_zone=$(mktemp)
+            temp_file_of_created_zone=$(mktemp)
     
             # Remove all lines after the last line that starts with '@'
-            awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$file1" > "$temp_file1"
+            awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$zone_file" > "$temp_file_of_original_zone"
     
             # Remove all lines from the beginning until the line that has 'NS' and including that line
-            awk '/NS/ { found=1; next } found { print }' "$file2" > "$temp_file2"
+            awk '/NS/ { found=1; next } found { print }' "/etc/bind/zones/${zone_name}.zone" > "$temp_file_of_created_zone"
     
             # Append the processed second file to the first
-            cat "$temp_file2" >> "$temp_file1"
+            cat "$temp_file_of_created_zone" >> "$temp_file_of_original_zone"
     
             # Move the merged content to the final file
-            mv "$temp_file1" "$file2"
+            mv "$temp_file_of_original_zone" "/etc/bind/zones/${zone_name}.zone"
     
             # Clean up
-            rm "$temp_file2"
+            rm "$temp_file_of_created_zone"
     
             log "DNS zone file for $zone_name has been merged successfully."
         done
