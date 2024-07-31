@@ -566,21 +566,25 @@ restore_dns_zones() {
             temp_file_of_created_zone=$(mktemp)
     
             # Remove all lines after the last line that starts with '@'
+            log "Editing original zone for domain $zone_name to temporary file: $temp_file_of_original_zone"
             awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$zone_file" > "$temp_file_of_original_zone"
     
             # Remove all lines from the beginning until the line that has 'NS' and including that line
+            log "Editing created zone for domain $zone_name to temporary file: $temp_file_of_created_zone"
             awk '/NS/ { found=1; next } found { print }' "/etc/bind/zones/${zone_name}.zone" > "$temp_file_of_created_zone"
     
             # Append the processed second file to the first
+            log "Merging the DNS zone records from  $temp_file_of_created_zone with $temp_file_of_original_zone"
             cat "$temp_file_of_created_zone" >> "$temp_file_of_original_zone"
     
             # Move the merged content to the final file
+            log "Replacing the created zone /etc/bind/zones/${zone_name}.zone with updated records."
             mv "$temp_file_of_original_zone" "/etc/bind/zones/${zone_name}.zone"
     
             # Clean up
             rm "$temp_file_of_created_zone"
     
-            log "DNS zone file for $zone_name has been merged successfully."
+            log "DNS zone file for $zone_name has been imported."
         done
     else
         log "No DNS zones found to restore"
