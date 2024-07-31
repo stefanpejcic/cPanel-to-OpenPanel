@@ -640,7 +640,7 @@ restore_dns_zones() {
 # Function to restore files
 restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
-    log "Restoring files ($du_needed_for_home/) to /home/$cpanel_username/"
+    log "Restoring files ($du_needed_for_home) to /home/$cpanel_username/"
 
     if [ "$DRY_RUN" = true ]; then
         log "DRY RUN: Would restore files to /home/$cpanel_username/"
