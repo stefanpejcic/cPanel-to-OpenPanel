@@ -368,7 +368,42 @@ restore_php_version() {
         fi
     fi
 }
+grant_phpmyadmin_access() {
+    local username="$1"
 
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would grant phpMyAdmin access to all databases for user $username"
+        return
+    fi
+
+    log "Granting phpMyAdmin access to all databases for user $username"
+
+    # Get the phpMyAdmin username (adjust this if your naming convention is different)
+    phpmyadmin_user="pma_${username}"
+
+    # SQL command to grant access
+    sql_command="
+    SELECT CONCAT('GRANT ALL PRIVILEGES ON ', table_schema, '.* TO \"$phpmyadmin_user\"@\"%\";')
+    FROM information_schema.schemata
+    WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+    AND schema_name LIKE '${username}\\_%';"
+
+    # Execute the SQL command
+    grant_commands=$(docker exec $username mysql -N -e "$sql_command")
+
+    if [ -n "$grant_commands" ]; then
+        echo "$grant_commands" | while read -r grant; do
+            log "Executing: $grant"
+            docker exec $username mysql -e "$grant"
+        done
+
+        # Flush privileges to apply changes
+        docker exec $username mysql -e "FLUSH PRIVILEGES;"
+        log "Access granted to phpMyAdmin user for all databases of $username"
+    else
+        log "No databases found for user $username"
+    fi
+}
 # Function to restore MySQL databases and users
 restore_mysql() {
     local mysql_dir="$1"
@@ -401,8 +436,8 @@ restore_mysql() {
     if [ -d "$mysql_dir" ]; then
         # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
         old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"
-	sed -i "s/$old_ip/$new_ip/g" $mysql_conf
+        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
+        sed -i "s/$old_ip/$new_ip/g" $mysql_conf
 
         # STEP 2. start mysql for user
         log "Initializing MySQL service for user"
@@ -441,6 +476,9 @@ restore_mysql() {
 
         # STEP 5. flush privileges
         docker exec $cpanel_username bash -c "mysql -e 'FLUSH PRIVILEGES;'"
+
+        # STEP 6. Grant phpMyAdmin access
+        grant_phpmyadmin_access "$cpanel_username"
     else
         log "No MySQL databases found to restore"
     fi
