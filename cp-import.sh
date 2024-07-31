@@ -10,31 +10,35 @@ set -eo pipefail
 # HELPER FUNCTIONS
 
 usage() {
-    echo "Usage: $0 --backup-location <path> --plan-name <plan_name>"
+    echo "Usage: $0 --backup-location <path> --plan-name <plan_name> [--dry-run]"
     echo ""
-    echo "Example: $0 --backup-location /home/backup-7.29.2024_13-22-32_stefan.tar.gz  --plan-name default_plan_nginx"
+    echo "Example: $0 --backup-location /home/backup-7.29.2024_13-22-32_stefan.tar.gz --plan-name default_plan_nginx --dry-run"
     exit 1
 }
 
 log() {
-	local message="$1"
-	#output to user
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $message"
-	# save in log
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $message" >> "$log_file"
+    local message="$1"
+    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $message" | tee -a "$log_file"
 }
 
+handle_error() {
+    log "ERROR: An error occurred in function '$1' on line $2"
+    cleanup
+    exit 1
+}
+
+trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
+
+cleanup() {
+    log "Cleaning up temporary files and directories"
+    rm -rf "$backup_dir"
+}
 
 define_data_and_log(){
     local backup_location=""
     local plan_name=""
-
-	# root user is needed
-	if [[ $EUID -ne 0 ]]; then
-	    log "This script must be run as root or with sudo privileges"
-	    exit 1
-	fi
-
+    DRY_RUN=false
 
     # Parse command-line arguments
     while [ "$1" != "" ]; do
@@ -45,39 +49,30 @@ define_data_and_log(){
             --plan-name )       shift
                                 plan_name=$1
                                 ;;
+            --dry-run )         DRY_RUN=true
+                                ;;
             * )                 usage
         esac
         shift
     done
-
 
     # Validate required parameters
     if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
         usage
     fi
 
-	# Format log file
-	base_name="$(basename "$backup_location")"
-	base_name_no_ext="${base_name%.*}" 
- 	local log_dir="/var/log/openpanel/admin/imports"
-  	mkdir -p $log_dir
-	log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
+    # Format log file
+    base_name="$(basename "$backup_location")"
+    base_name_no_ext="${base_name%.*}" 
+    local log_dir="/var/log/openpanel/admin/imports"
+    mkdir -p $log_dir
+    log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
 
-# Run the main function
-echo "Import started, log file: $log_file"
+    # Run the main function
+    echo "Import started, log file: $log_file"
 
-main
-
+    main
 }
-
-
-handle_error() {
-    log "Error occurred in function '$1' on line $2"
-    exit 1
-}
-
-
-trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -85,83 +80,58 @@ command_exists() {
 
 install_dependencies() {
     log "Checking dependencies..."
-	
-	install_needed=false
-	
-	# needed commands
-	declare -A commands=(
-	    ["tar"]="tar"
-	    ["parallel"]="parallel"
-	    ["rsync"]="rsync"
-	    ["unzip"]="unzip"
-	    ["jq"]="jq"
-	    ["mysql"]="mysql-client"
-	    ["wget"]="wget"
-	    ["curl"]="curl"
-	)
-	
-	for cmd in "${!commands[@]}"; do
-	    if ! command_exists "$cmd"; then
-	        install_needed=true
-	        break
-	    fi
-	done
-
-
-	# If installation is needed, update package list and install missing packages
-	if [ "$install_needed" = true ]; then
- 	    log "Updating package manager.."
-	    apt-get update  >/dev/null 2>&1
-	    for cmd in "${!commands[@]}"; do
-	        if ! command_exists "$cmd"; then
-	 		log "Installing ${commands[$cmd]}"
-	            apt-get install -y "${commands[$cmd]}"  >/dev/null 2>&1
-	        fi
-	    done
-     	    log "Dependencies installed successfully."
-	fi
-}
-
-
-get_server_ipv4(){
-
-	# Get server ipv4 from ip.openpanel.co or ifconfig.me
-	new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
-	
-	# if no internet, get the ipv4 from the hostname -I
-	if [ -z "$new_ip" ]; then
-	    new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
-	fi
-
-}
-
-
-validate_plan_exists(){
-    check_plan_sql=$(mysql -Dpanel -se "SELECT COUNT(*) FROM plans WHERE name = '$plan_name';")
     
-    # Check the result
-    if [ "$check_plan_sql" -gt 0 ]; then
-        log "Plan name '$plan_name' exists in the plans table."
-    else
-        log "Plan name '$plan_name' does not exist in the plans table."
-        exit 1
+    install_needed=false
+    
+    # needed commands
+    declare -A commands=(
+        ["tar"]="tar"
+        ["parallel"]="parallel"
+        ["rsync"]="rsync"
+        ["unzip"]="unzip"
+        ["jq"]="jq"
+        ["mysql"]="mysql-client"
+        ["wget"]="wget"
+        ["curl"]="curl"
+    )
+    
+    for cmd in "${!commands[@]}"; do
+        if ! command_exists "$cmd"; then
+            install_needed=true
+            break
+        fi
+    done
+
+    # If installation is needed, update package list and install missing packages
+    if [ "$install_needed" = true ]; then
+        log "Updating package manager.."
+        apt-get update  >/dev/null 2>&1
+        for cmd in "${!commands[@]}"; do
+            if ! command_exists "$cmd"; then
+                log "Installing ${commands[$cmd]}"
+                apt-get install -y "${commands[$cmd]}"  >/dev/null 2>&1
+            fi
+        done
+        log "Dependencies installed successfully."
     fi
 }
 
+get_server_ipv4(){
+    # Get server ipv4 from ip.openpanel.co or ifconfig.me
+    new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
+    
+    # if no internet, get the ipv4 from the hostname -I
+    if [ -z "$new_ip" ]; then
+        new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
+    fi
+}
 
-###############################################################
-
-
-
-
-
-
-
-
-
-
-
-
+validate_plan_exists(){
+    if ! opencli plan-list | grep -q "$plan_name"; then
+        log "FATAL ERROR: Plan name '$plan_name' does not exist."
+        exit 1
+    fi
+}
 
 ###############################################################
 # MAIN FUNCTIONS
@@ -180,31 +150,31 @@ check_if_valid_cp_backup(){
             log "Identified cpmove backup"
             extraction_command="tar -xzf"
             EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
-	    ;;
+        ;;
         backup-*.tar.gz)
             log "Identified full or partial cPanel backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tar.gz)
             log "Identified gzipped tar backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tgz)
             log "Identified tgz backup"
             extraction_command="tar -xzf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.tar)
             log "Identified tar backup"
             extraction_command="tar -xf"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *.zip)
             log "Identified zip backup"
             extraction_command="unzip"
-	    EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
+            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *)
             log "Unrecognized backup format: $backup_filename"
@@ -213,38 +183,31 @@ check_if_valid_cp_backup(){
     esac
 }
 
-
 check_if_disk_available(){
+    TMP_DIR="/tmp"
+    HOME_DIR="/home"
 
-#idealy should run after creating user
+    # Get available space in /tmp and home directories in bytes
+    AVAILABLE_TMP=$(df --output=avail "$TMP_DIR" | tail -n 1)
+    AVAILABLE_HOME=$(df --output=avail "$HOME_DIR" | tail -n 1)
 
-TMP_DIR="/tmp"
-HOME_DIR="/home"
+    AVAILABLE_TMP=$(($AVAILABLE_TMP * 1024))
+    AVAILABLE_HOME=$(($AVAILABLE_HOME * 1024))
 
-# Get available space in /tmp and home directories in bytes
-AVAILABLE_TMP=$(df --output=avail "$TMP_DIR" | tail -n 1)
-AVAILABLE_HOME=$(df --output=avail "$HOME_DIR" | tail -n 1)
-
-AVAILABLE_TMP=$(($AVAILABLE_TMP * 1024))
-AVAILABLE_HOME=$(($AVAILABLE_HOME * 1024))
-
-# Check if there's enough space
-if [[ $AVAILABLE_TMP -ge $EXTRACTED_SIZE && $AVAILABLE_HOME -ge $EXTRACTED_SIZE ]]; then
-    log "There is enough disk space to extract the archive and copy it to the home directory."
-else
-    log "FATAL ERROR: Not enough disk space."
-    if [[ $AVAILABLE_TMP -lt $EXTRACTED_SIZE ]]; then
-        log "Insufficient space in /tmp."
+    # Check if there's enough space
+    if [[ $AVAILABLE_TMP -ge $EXTRACTED_SIZE && $AVAILABLE_HOME -ge $EXTRACTED_SIZE ]]; then
+        log "There is enough disk space to extract the archive and copy it to the home directory."
+    else
+        log "FATAL ERROR: Not enough disk space."
+        if [[ $AVAILABLE_TMP -lt $EXTRACTED_SIZE ]]; then
+            log "Insufficient space in /tmp."
+        fi
+        if [[ $AVAILABLE_HOME -lt $EXTRACTED_SIZE ]]; then
+            log "Insufficient space in the /home directory."
+        fi
+        exit 1
     fi
-    if [[ $AVAILABLE_HOME -lt $EXTRACTED_SIZE ]]; then
-        log "Insufficient space in the /home directory."
-    fi
-    exit 1
-fi
-
 }
-
-
 
 # Extract
 extract_cpanel_backup() {
@@ -253,11 +216,6 @@ extract_cpanel_backup() {
     log "Extracting backup from $backup_location to $backup_dir"
     mkdir -p "$backup_dir"
 
-
-    #TODO: check if server has enough space to unpack it and then to copy.
-    # should be free on /home about 80% of the compressed archive and 80% on tmp.
-    # in case tmp is toosmall, use /home  but then at least 160% of archive needs to be available.
-
     # Extract the backup
     if [ "$extraction_command" = "unzip" ]; then
         $extraction_command "$backup_location" -d "$backup_dir"
@@ -265,11 +223,11 @@ extract_cpanel_backup() {
         $extraction_command "$backup_location" -C "$backup_dir"
     fi
     if [ $? -eq 0 ]; then
-    	log "Backup extracted successfully."
+        log "Backup extracted successfully."
     else
-    	log "Backup extraction failed."
-        #TODO: do cleanup!
-	exit 1
+        log "Backup extraction failed."
+        cleanup
+        exit 1
     fi
 
     # Handle nested archives (common in some cPanel backups)
@@ -280,13 +238,7 @@ extract_cpanel_backup() {
             rm "$nested_archive"  # Remove the nested archive after extraction
         fi
     done
-
-    # debug only!
-    #log "Contents of extracted backup:"
-    #find "$backup_dir" -type f | sed 's/^/  /'
 }
-
-
 
 # Function to locate important directories in the extracted backup
 locate_backup_directories() {
@@ -305,13 +257,11 @@ locate_backup_directories() {
     mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
     if [ -z "$mysqldir" ]; then
         log "WARNING: Unable to locate MySQL directory in the backup"
-        #exit 1 #not critical
     fi
 
     mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql-auth.json" | head -n 1)
-    if [ -z "$mysqldir" ]; then
+    if [ -z "$mysql_conf" ]; then
         log "WARNING: Unable to locate MySQL grants file in the backup"
-        #exit 1 #not critical
     fi
 
     cp_file=$(find "$backup_dir" -type f -path "*/cp/*" -name "$cpanel_username" | head -n 1)
@@ -326,8 +276,6 @@ locate_backup_directories() {
     log "MySQL grants: $mysql_conf"
     log "cPanel configuration: $cp_file"
 }
-
-
 
 # Function to parse cPanel backup metadata
 parse_cpanel_metadata() {
@@ -344,17 +292,14 @@ parse_cpanel_metadata() {
     
     cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/${cpanel_username})
     if [ -z "$cpanel_email" ]; then
-    	cpanel_email=" " #set blank
+        cpanel_email=" " #set blank
     fi
 
-    
     log "cPanel metadata parsed successfully."
     log "Email: $cpanel_email"
     log "Main Domain: $main_domain"
     log "PHP Version: $php_version"
-
 }
-
 
 check_if_user_exists(){  
     backup_filename=$(basename "$backup_location")
@@ -367,12 +312,11 @@ check_if_user_exists(){
         existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
     fi
     if [ -z "$existing_user" ]; then
-        log "Username $cpanel_username is available, staring import.."
+        log "Username $cpanel_username is available, starting import.."
     else
         log "FATAL ERROR: $cpanel_username already exists."
         exit 1
     fi
-
 }
 
 # Function to create or get user
@@ -381,17 +325,22 @@ create_new_user() {
     local email="$3"
     local plan_name="$4"
 
-	create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$create_user_command"
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would create user $username with email $email and plan $plan_name"
+        return
+    fi
+
+    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
+    while IFS= read -r line; do
+        log "$line"
+    done <<< "$create_user_command"
    
-	if echo "$create_user_command" | grep -q "Successfully added user"; then
-	    :
-	else
-	    log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
-	    exit 1
-	fi
+    if echo "$create_user_command" | grep -q "Successfully added user"; then
+        :
+    else
+        log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
+        exit 1
+    fi
 }
 
 # Function to restore PHP version
@@ -399,22 +348,26 @@ restore_php_version() {
     local username="$1"
     local php_version="$2"
 
-	  # Check if php_version is "inherit"
-	  if [ "$php_version" == "inherit" ]; then
-	    log "PHP version is set to inherit. No changes will be made."
-	  else
-	    log "Restoring PHP version $php_version for user $username"
-	    local current_version=$(opencli php-default_php_version "$username")
-	    if [ "$current_version" != "$php_version" ]; then
-	        local installed_versions=$(opencli php-enabled_php_versions "$username")
-	        if ! echo "$installed_versions" | grep -q "$php_version"; then
-	            opencli php-install_php_version "$username" "$php_version"
-	        fi
-	        opencli php-enabled_php_versions --update "$username" "$php_version"
-	    fi
-	  fi
-}
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore PHP version $php_version for user $username"
+        return
+    fi
 
+    # Check if php_version is "inherit"
+    if [ "$php_version" == "inherit" ]; then
+        log "PHP version is set to inherit. No changes will be made."
+    else
+        log "Restoring PHP version $php_version for user $username"
+        local current_version=$(opencli php-default_php_version "$username")
+        if [ "$current_version" != "$php_version" ]; then
+            local installed_versions=$(opencli php-enabled_php_versions "$username")
+            if ! echo "$installed_versions" | grep -q "$php_version"; then
+                opencli php-install_php_version "$username" "$php_version"
+            fi
+            opencli php-enabled_php_versions --update "$username" "$php_version"
+        fi
+    fi
+}
 
 # Function to restore MySQL databases and users
 restore_mysql() {
@@ -423,67 +376,71 @@ restore_mysql() {
     
     log "Restoring MySQL databases for user $cpanel_username"
     
-	#https://jira.mariadb.org/browse/MDEV-34183
- 	apply_sandbox_workaround() {
-	    local db_file="$1"
-	    text_to_check='enable the sandbox mode'
-	    local first_line
-	
-	    first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
-     		if echo "$first_line" | grep -q "$text_to_check"; then
-       			 if [ "$sandbox_warning_logged" = false ]; then
-			        log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
-	   			sandbox_warning_logged=true
-			 fi
-				# Remove the first line and save the changes to the same file
-			        tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
-	    fi
-	}    
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore MySQL databases for user $cpanel_username"
+        return
+    fi
 
+    #https://jira.mariadb.org/browse/MDEV-34183
+    apply_sandbox_workaround() {
+        local db_file="$1"
+        text_to_check='enable the sandbox mode'
+        local first_line
+    
+        first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
+        if echo "$first_line" | grep -q "$text_to_check"; then
+            if [ "$sandbox_warning_logged" = false ]; then
+                log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
+                sandbox_warning_logged=true
+            fi
+            # Remove the first line and save the changes to the same file
+            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
+        fi
+    }    
 
     if [ -d "$mysql_dir" ]; then
-
-         # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
+        # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
         old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
-        sed -i "s/$old_ip/$new_ip/g" $mysql_conf
+        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"
+	sed -i "s/$old_ip/$new_ip/g" $mysql_conf
 
         # STEP 2. start mysql for user
-            log "Initializing MySQL service for user"
-            docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
-	    docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
-	
-	# STEP 3. create and import databases
- 	total_databases=$(ls "$mysql_dir"/*.create | wc -l)
-	log "Starting import for $total_databases MySQL databases"
-	if [ "$total_databases" -gt 0 ]; then
-	current_db=1
-	        for db_file in "$mysql_dir"/*.create; do
-	            local db_name=$(basename "$db_file" .create)
-	   
-	            log "Creating database: $db_name (${current_db}/${total_databases})"           
-		    apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-		    docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-	            docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
-	
-	            log "Importing tables for database: $db_name"
-		    apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-	            docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
-	            docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
-		    current_db=$((current_db + 1))
-	        done
-	 log "Finished processing $current_db databases"
-	 else
-	    log "WARNING: No MySQL databases found"
-	fi
+        log "Initializing MySQL service for user"
+        docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
+        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
+    
+        # STEP 3. create and import databases
+        total_databases=$(ls "$mysql_dir"/*.create | wc -l)
+        log "Starting import for $total_databases MySQL databases"
+        if [ "$total_databases" -gt 0 ]; then
+            current_db=1
+            for db_file in "$mysql_dir"/*.create; do
+                local db_name=$(basename "$db_file" .create)
+       
+                log "Creating database: $db_name (${current_db}/${total_databases})"           
+                apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
+                docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
+                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
+    
+                log "Importing tables for database: $db_name"
+                apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
+                docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
+                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
+                current_db=$((current_db + 1))
+            done
+            log "Finished processing $current_db databases"
+        else
+            log "WARNING: No MySQL databases found"
+        fi
         # STEP 4. import grants 
-            log "Importing database grants"
-	    python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql-auth.json ${real_backup_files_path}/mysql.sql-auth.sql
-     
-            docker cp ${real_backup_files_path}/mysql.sql-auth.sql $cpanel_username:/tmp/mysql.sql-auth.sql   >/dev/null 2>&1
-            docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql-auth.sql"
+        log "Importing database grants"
+        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql-auth.json ${real_backup_files_path}/mysql.sql-auth.sql
+ 
+        docker cp ${real_backup_files_path}/mysql.sql-auth.sql $cpanel_username:/tmp/mysql.sql-auth.sql   >/dev/null 2>&1
+        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql-auth.sql"
 
-        # STEP 5. flush privilegies
+        # STEP 5. flush privileges
+        docker exec $cpanel_username bash -c "mysql -e 'FLUSH PRIVILEGES;'"
     else
         log "No MySQL databases found to restore"
     fi
@@ -492,6 +449,11 @@ restore_mysql() {
 # Function to restore SSL certificates
 restore_ssl() {
     local username="$1"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore SSL certificates for user $username"
+        return
+    fi
 
     log "Restoring SSL certificates for user $username"
     if [ -d "$real_backup_files_path/ssl" ]; then
@@ -514,6 +476,11 @@ restore_ssl() {
 restore_ssh() {
     local username="$1"
 
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore SSH access for user $username"
+        return
+    fi
+
     log "Restoring SSH access for user $username"
     local shell_access=$(grep -oP 'shell: \K\S+' "$real_backup_files_path/userdata/main")
     if [ "$shell_access" == "/bin/bash" ]; then
@@ -528,45 +495,46 @@ restore_ssh() {
 
 # Function to restore DNS zones
 restore_dns_zones() {
-
     log "Restoring DNS zones for user $cpanel_username"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore DNS zones for user $cpanel_username"
+        return
+    fi
+
     if [ -d "$real_backup_files_path/dnszones" ]; then
         for zone_file in "$real_backup_files_path/dnszones"/*; do
-	    local zone_name=$(basename "${zone_file%.db}")
-	        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-	        log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
-	        sed -i "s/$old_ip/$new_ip/g" $real_backup_files_path/dnszones/$zone_file
+            local zone_name=$(basename "${zone_file%.db}")
+            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
+            log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
+            sed -i "s/$old_ip/$new_ip/g" $real_backup_files_path/dnszones/$zone_file
 
-        log "Importing DNS zone: $zone_name"
-	
-	# Paths to your files
-	file1="$real_backup_files_path/dnszones/$zone_file"
-	file2="/etc/bind/zones/${zone_name}.zone"
-	
-	# Temporary files to store intermediate results
-	temp_file1=$(mktemp)
-	temp_file2=$(mktemp)
-	
-	# Remove all lines after the last line that starts with '@'
-	awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$file1" > "$temp_file1"
-	
-	# Remove all lines from the beginning until the line that has 'NS' and including that line
-	awk '/NS/ { found=1; next } found { print }' "$file2" > "$temp_file2"
-	
-	# Append the processed second file to the first
-	cat "$temp_file2" >> "$temp_file1"
-	
-	# Move the merged content to the final file
-	mv "$temp_file1" "$file2"
-	
-	# Clean up
-	rm "$temp_file1" "$temp_file2"
-	
-	echo "Files have been merged successfully."
-
-
-
-
+            log "Importing DNS zone: $zone_name"
+    
+            # Paths to your files
+            file1="$real_backup_files_path/dnszones/$zone_file"
+            file2="/etc/bind/zones/${zone_name}.zone"
+    
+            # Temporary files to store intermediate results
+            temp_file1=$(mktemp)
+            temp_file2=$(mktemp)
+    
+            # Remove all lines after the last line that starts with '@'
+            awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$file1" > "$temp_file1"
+    
+            # Remove all lines from the beginning until the line that has 'NS' and including that line
+            awk '/NS/ { found=1; next } found { print }' "$file2" > "$temp_file2"
+    
+            # Append the processed second file to the first
+            cat "$temp_file2" >> "$temp_file1"
+    
+            # Move the merged content to the final file
+            mv "$temp_file1" "$file2"
+    
+            # Clean up
+            rm "$temp_file2"
+    
+            log "DNS zone file for $zone_name has been merged successfully."
         done
     else
         log "No DNS zones found to restore"
@@ -577,30 +545,28 @@ restore_dns_zones() {
 restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring files ($du_needed_for_home/) to /home/$cpanel_username/"
-   	#rsync -av --progress "$real_backup_files_path/homedir" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-	#  log "$line"
-	#done
- 
-    #TODO: use parallel or xargs
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore files to /home/$cpanel_username/"
+        return
+    fi
+
+    rsync -a --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+        log "$line"
+    done
+
+    log "Finished transferring files, comparing to source.."
+    original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
+    copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
     
-    output=$(cp -r "$real_backup_files_path/homedir/." "/home/$cpanel_username/" 2>&1)
-    	while IFS= read -r line; do
-       log "$line"
-     done <<< "$output"
-
-
-	log "Finished transferring files, comparing to source.."
-	original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
-	copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
-	
-	if [[ "$original_size" -eq "$copied_size" ]]; then
-	  log "The original and target directories have the same size."
-	else
-	  log "WARNING: The original and target directories differ in size after restore."
-	  log "Original size: $original_size bytes"
-	  log "Target size:   $copied_size bytes"
-	fi
-	   
+    if [[ "$original_size" -eq "$copied_size" ]]; then
+        log "The original and target directories have the same size."
+    else
+        log "WARNING: The original and target directories differ in size after restore."
+        log "Original size: $original_size bytes"
+        log "Target size:   $copied_size bytes"
+    fi
+       
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
@@ -608,6 +574,11 @@ restore_files() {
 restore_wordpress() {
     local real_backup_files_path="$1"
     local username="$2"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore WordPress sites for user $username"
+        return
+    fi
 
     log "Restoring WordPress sites for user $username"
     if [ -d "$real_backup_files_path/wptoolkit" ]; then
@@ -620,116 +591,90 @@ restore_wordpress() {
     fi
 }
 
-
 restore_domains(){
     # Restore addon domains and subdomains
     if [ -d "$real_backup_files_path/userdata" ]; then
-
-	files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
+        files=($(find "$real_backup_files_path/userdata" -type f ! -name "*.json" ! -name "*?SSL" ! -name "*.db" ! -name "main"))
         domains_total_count=${#files[@]}
         current_domain_count=0
 
-	# main domain		 	
- 	if [ -d "$homedir/public_html" ]; then
-	   	current_domain_count=$((current_domain_count + 1))
-	    	domains_total_count=$((domains_total_count + 1))
+        # main domain             
+        if [ -d "$homedir/public_html" ]; then
+            current_domain_count=$((current_domain_count + 1))
+            domains_total_count=$((domains_total_count + 1))
 
-		if opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
-		    log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
-      			output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"
-		else
-		    log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
-		fi
-   	fi
+            if [ "$DRY_RUN" = true ]; then
+                log "DRY RUN: Would restore main domain: $main_domain"
+            elif opencli domains-whoowns "$main_domain" | grep -q "not found in the database."; then
+                log "Restoring main domain: $main_domain (${current_domain_count}/${domains_total_count})"
+                output=$(opencli domains-add "$main_domain" "$cpanel_username" 2>&1)
+                while IFS= read -r line; do
+                    log "$line"
+                done <<< "$output"
+            else
+                log "WARNING: Primary domain $main_domain already exists and will not be added to this user."
+            fi
+        fi
 
-
- 	# addons
-	for domain_file in "${files[@]}"; do
-	    domain=$(basename "$domain_file")
-	    #domain_path=$(grep -oP 'documentroot: \K\S+' "$domain_file")
-     	    current_domain_count=$((current_domain_count + 1))
-	    log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
+        # addons
+        for domain_file in "${files[@]}"; do
+            domain=$(basename "$domain_file")
+            current_domain_count=$((current_domain_count + 1))
+            log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
      
-		if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-		    log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
-      			output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"     
-		else
-		    log "WARNING: Addon domain $domain already exists and will not be added to this user."
-		fi    
-	done
-	log "Finished importing $current_domain_count domains"
+            if [ "$DRY_RUN" = true ]; then
+                log "DRY RUN: Would restore addon domain $domain"
+            elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+                log "Restoring addon domain $domain (${current_domain_count}/${domains_total_count})"
+                output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                while IFS= read -r line; do
+                    log "$line"
+                done <<< "$output"     
+            else
+                log "WARNING: Addon domain $domain already exists and will not be added to this user."
+            fi    
+        done
+        log "Finished importing $current_domain_count domains"
     fi
 }
 
-
 # Function to restore cron jobs
 restore_cron() {
-
     log "Restoring cron jobs for user $cpanel_username"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore cron jobs for user $cpanel_username"
+        return
+    fi
+
     if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
-    
- 			# exclude shell and email variables from file!
-    			sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
+        # exclude shell and email variables from file!
+        sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
 
-      			output=$(docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"
-   
-      			output=$(docker exec $cpanel_username bash -c "crontab -u $cpanel_username /var/spool/cron/crontabs/$cpanel_username" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"
+        output=$(docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username 2>&1)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"
 
-      			output=$(docker exec $cpanel_username bash -c "service cron restart" 2>&1)
-			 while IFS= read -r line; do
-		    		log "$line"
-			done <<< "$output"
+        output=$(docker exec $cpanel_username bash -c "crontab -u $cpanel_username /var/spool/cron/crontabs/$cpanel_username" 2>&1)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"
 
- 
-	docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh  >/dev/null 2>&1
+        output=$(docker exec $cpanel_username bash -c "service cron restart" 2>&1)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"
 
+        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh  >/dev/null 2>&1
     else
         log "No cron jobs found to restore"
     fi
 }
 
-###############################################################
-
-
-
-
-
-
-
-
-
-
-
-convert_cpanel_password (){
-
-#TODO:
-# get hash and salt from shadow file in extracted files
-# covert to scrypt hass
-#replace stored scrypt hash in db for that user
-#
-echo "nothing yet.."
-
-}
-
-
-
-
 # Main execution
 main() {
-
-echo -e "
+    echo -e "
 ------------------ STARTING CPANEL ACCOUNT IMPORT ------------------
 --------------------------------------------------------------------
 
@@ -745,13 +690,13 @@ Currently supported features:
 emails, nodejs/python apps and postgres are not yet supported!
 
 --------------------------------------------------------------------
-  if you experience any errors with this script, pelase report to
+  if you experience any errors with this script, please report to
     https://github.com/stefanpejcic/cPanel-to-OpenPanel/issues
 --------------------------------------------------------------------
 "
 
-log "Log file: $log_file"
-log "PID: $pid"
+    log "Log file: $log_file"
+    log "PID: $pid"
 
     # PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"
@@ -759,7 +704,7 @@ log "PID: $pid"
     check_if_user_exists
     validate_plan_exists
     install_dependencies
-    get_server_ipv4 #used in myhsql grants
+    get_server_ipv4 #used in mysql grants
 
     # unique
     backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
@@ -776,7 +721,6 @@ log "PID: $pid"
 
     # create new user
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
-    #convert_cpanel_password   #TODO: convert hash from cp
 
     # restore data
     restore_files
@@ -786,34 +730,25 @@ log "PID: $pid"
     restore_php_version "$cpanel_username" "$php_version"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
-    restore_dns_zones  #TODO
-    restore_wordpress "$real_backup_files_path" "$cpanel_username" #TO REMOVE
-    
+    restore_dns_zones
+    restore_wordpress "$real_backup_files_path" "$cpanel_username"
 
-    log "Fixing file permissions for user $cpanel_username" #TODO
-    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username" #TODO
+    log "Fixing file permissions for user $cpanel_username"
+    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
 
     # Cleanup
-    log "Cleaning up temporary files"
-    rm -rf "$backup_dir"
+    cleanup
 
-	end_time=$(date +%s)
-	elapsed=$(( end_time - start_time ))
-	hours=$(( elapsed / 3600 ))
-	minutes=$(( (elapsed % 3600) / 60 ))
-	seconds=$(( elapsed % 60 ))
-	
-	log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
+    end_time=$(date +%s)
+    elapsed=$(( end_time - start_time ))
+    hours=$(( elapsed / 3600 ))
+    minutes=$(( (elapsed % 3600) / 60 ))
+    seconds=$(( elapsed % 60 ))
+    
+    log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
     log "SUCCESS: Import for user $cpanel_username completed successfully."
-
-
-
-
 }
-
-
-###############################################################
 
 # MAIN FUNCTION
 define_data_and_log "$@"
