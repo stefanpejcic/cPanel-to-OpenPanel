@@ -715,7 +715,7 @@ if [ -f "$real_backup_files_path/userdata/main" ]; then
     
     
     log "Processing main (proimary) domain domain.."
-    create_domain "$parked" "main"
+    create_domain "$main_domain" "main"
     
     log "Processing parked (alias) domains.."
     for parked in "${parked_domains_array[@]}"; do
