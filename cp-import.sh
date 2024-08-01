@@ -23,7 +23,7 @@ log() {
 }
 
 handle_error() {
-    log "ERROR: An error occurred in function '$1' on line $2"
+    log "FATAL ERROR: An error occurred in function '$1' on line $2"
     cleanup
     exit 1
 }
@@ -190,7 +190,7 @@ check_if_valid_cp_backup(){
             EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
             ;;
         *)
-            log "Unrecognized backup format: $backup_filename"
+            log "FATAL ERROR: Unrecognized backup format: $backup_filename"
             exit 1
             ;;
     esac
@@ -241,7 +241,7 @@ extract_cpanel_backup() {
     if [ $? -eq 0 ]; then
         log "Backup extracted successfully."
     else
-        log "Backup extraction failed."
+        log "FATAL ERROR: Backup extraction failed."
         cleanup
         exit 1
     fi
