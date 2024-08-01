@@ -627,9 +627,11 @@ restore_files() {
         return
     fi
 
-    rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-        log "$line"
-    done
+    mv $real_backup_files_path/homedir /home/$cpanel_username
+
+    #rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+    #    log "$line"
+    #done
     
     log "Finished transferring files, comparing to source.."
     original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
