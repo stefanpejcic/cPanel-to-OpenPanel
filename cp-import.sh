@@ -442,8 +442,7 @@ restore_mysql() {
         
         old_hostname=$(cat ${real_backup_files_path}/meta/hostname)
         log "Removing old hostname $old_hostname from database grants"          
-        sed -i '/$old_hostname/d' $mysql_conf
-
+        sed -i "/$old_hostname/d" "$mysql_conf"
 
 
         # STEP 2. start mysql for user
