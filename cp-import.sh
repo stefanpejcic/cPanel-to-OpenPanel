@@ -374,11 +374,10 @@ create_new_user() {
 
 # PHP VERSION
 restore_php_version() {
-    local username="$1"
-    local php_version="$2"
+    local php_version="$1"
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would check/install PHP version $php_version for user $username"
+        log "DRY RUN: Would check/install PHP version $php_version for user $cpanel_username"
         return
     fi
 
@@ -387,19 +386,19 @@ restore_php_version() {
         log "PHP version is set to inherit. No changes will be made."
     else
         log "Checking if current PHP version installed matches the version from backup"
-        local current_version=$(opencli php-default_php_version "$username" | sed 's/Default PHP version for user.*: //')
+        local current_version=$(opencli php-default_php_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
         if [ "$current_version" != "$php_version" ]; then
-            local installed_versions=$(opencli php-enabled_php_versions "$username")
+            local installed_versions=$(opencli php-enabled_php_versions "$cpanel_username")
             if ! echo "$installed_versions" | grep -q "$php_version"; then
             log "Default PHP version $php_version from backup is not present in the container, installing.."            
-                output=$(opencli php-install_php_version "$username" "$php_version" 2>&1)
+                output=$(opencli php-install_php_version "$cpanel_username" "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"
                 
                 #SET AS DEFAULT PHP VERSION
                 log "Setting newly installed PHP $php_version as the default version for all new domains."
-                output=$(opencli php-default_php_version "$username" --update "$php_version" 2>&1)
+                output=$(opencli php-default_php_version "$cpanel_username" --update "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"              
@@ -985,7 +984,7 @@ emails, nodejs/python apps and postgres are not yet supported!
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     
     fix_perms
-    restore_php_version "$cpanel_username" "$php_version" # php v needs to run before domains
+    restore_php_version "$php_version" # php v needs to run before domains
     restore_domains
     restore_dns_zones
     restore_mysql "$mysqldir"
