@@ -19,7 +19,9 @@ def remove_localhost_lines_and_replace_grant_usage(input_path, output_path):
                         user = match.group(1)
                         host = match.group(2)
                         password = match.group(3)
-                        new_line = f"ALTER USER '{user}'@'{host}' IDENTIFIED WITH 'mysql_native_password' AS '{password}';\n"
+                        #new_line = f"ALTER USER '{user}'@'{host}' IDENTIFIED WITH 'mysql_native_password' AS '{password}';\n"
+                        new_line = f"CREATE USER '{user}'@'{host}' IDENTIFIED WITH 'mysql_native_password' BY '{password}';\n"
+
                         outfile.write(new_line)
                     else:
                         # If regex doesn't match, write the original line
