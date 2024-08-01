@@ -570,11 +570,22 @@ restore_dns_zones() {
     if [ -d "$real_backup_files_path/dnszones" ]; then
         for zone_file in "$real_backup_files_path/dnszones"/*; do
             local zone_name=$(basename "${zone_file%.db}")
-            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-            log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
-            sed -i "s/$old_ip/$new_ip/g" $zone_file
 
-            log "Importing DNS zone: $zone_name"
+            # Check if the destination zone file exists, if not, it was probably a subdomain that had no dns zone and 
+            if [ ! -f "/etc/bind/zones/${zone_name}.zone" ]; then
+                log "DNS zone file /etc/bind/zones/${zone_name}.zone does not exist. Skipping import for $zone_name."
+                continue
+            else
+                log "Importing DNS zone: $zone_name"
+            fi
+            
+            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
+            if [ -z "$old_ip" ]; then
+                log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cpanel_username - records will not be automatically updated to new ip address."
+            else
+                log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"  
+                sed -i "s/$old_ip/$new_ip/g" $zone_file
+            fi
     
             # Temporary files to store intermediate results
             temp_file_of_original_zone=$(mktemp)
