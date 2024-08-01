@@ -440,7 +440,7 @@ restore_mysql() {
         log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
         sed -i "s/$old_ip/$new_ip/g" $mysql_conf
         
-        old_hostname=$(cat meta/hostname)
+        old_hostname=$(cat ${real_backup_files_path}/meta/hostname)
         log "Removing old hostname $old_hostname from database grants"          
         sed -i '/$old_hostname/d' $mysql_conf
 
