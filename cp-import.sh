@@ -437,8 +437,8 @@ restore_mysql() {
     if [ -d "$mysql_dir" ]; then
         # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
         old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-        log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
-        sed -i "s/$old_ip/$new_ip/g" $mysql_conf
+        log "Replacing old server IP: $old_ip with '%' in database grants"  
+        sed -i "s/$old_ip/%/g" $mysql_conf
         
         old_hostname=$(cat ${real_backup_files_path}/meta/hostname)
         log "Removing old hostname $old_hostname from database grants"          
@@ -475,10 +475,10 @@ restore_mysql() {
         fi
         # STEP 4. import grants and flush privileges
         log "Importing database grants"
-        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql   >/dev/null 2>&1
+        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql  # >/dev/null 2>&1
  
-        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql  >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql  #>/dev/null 2>&1
+        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;'"
 
         # STEP 5. Grant phpMyAdmin access
         grant_phpmyadmin_access "$cpanel_username"
@@ -955,10 +955,8 @@ emails, nodejs/python apps and postgres are not yet supported!
 
 
 
-    # restore data
+    # its faster to restore home dir, then create user
     restore_files
-
-    # create new user
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     
     fix_perms
@@ -974,13 +972,6 @@ emails, nodejs/python apps and postgres are not yet supported!
     #todo:
     # ftp accounts from proftpdpasswd file
     
-
-
-
-    # TEMPORARY REPALCED BY fix_perms FUNC
-    #log "Fixing file permissions for user $cpanel_username"
-    #opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
-
     # Cleanup
     cleanup
 
