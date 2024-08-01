@@ -629,9 +629,10 @@ restore_files() {
 
     mv $real_backup_files_path/homedir /home/$cpanel_username
 
-    #rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-    #    log "$line"
-    #done
+    : '
+    rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+        log "$line"
+    done
     
     log "Finished transferring files, comparing to source.."
     original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
@@ -644,7 +645,8 @@ restore_files() {
         log "Original size: $original_size bytes"
         log "Target size:   $copied_size bytes"
     fi
-
+    '
+    
     # Move all files from public_html to main domain dir
     log "Moving main domain files from public_html to $main_domain directory."
     mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain
