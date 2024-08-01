@@ -672,8 +672,11 @@ if [ -f "$real_backup_files_path/userdata/main" ]; then
     addon_domains=$(grep '^addon_domains:' -A 10 "$file_path" | sed -n '/^[^ ]/{s/: / /;p}')
     
     IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
-    sub_domains_array=()
-    addon_domains_array=()
+    IFS=',' read -r -a sub_domains_array <<< "$sub_domains"
+    IFS=',' read -r -a addon_domains_array <<< "$addon_domains"
+
+    #sub_domains_array=()
+    #addon_domains_array=()
     
     
     # Parse sub_domains
@@ -706,11 +709,28 @@ if [ -f "$real_backup_files_path/userdata/main" ]; then
 
 
 main_domain_count=1
-addon_domains_count=${#addon_domains_array[@]}
-parked_domains_count=${#parked_domains_array[@]}
-filtered_sub_domains_count=${#filtered_sub_domains[@]}
+
+if [ -z "$addon_domains_count" ]; then
+    addon_domains_count=0
+else
+    addon_domains_count=${#addon_domains_array[@]}
+fi
+
+if [ -z "$parked_domains" ]; then
+    parked_domains_count=0
+else
+    parked_domains_count=${#parked_domains_array[@]}
+fi
+
+if [ -z "$filtered_sub_domains" ]; then
+    filtered_sub_domains_count=0
+else
+    filtered_sub_domains_count=${#filtered_sub_domains[@]}
+fi
 
 domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
+
+
 
 current_domain_count=0
 
@@ -741,27 +761,45 @@ current_domain_count=0
 
 
     
-    log "Processing main (primary) domain.."
-    create_domain "$main_domain" "main"
-    
+log "Processing main (primary) domain.."
+create_domain "$main_domain" "main"
+
+
+if [ -z "$parked_domains" ]; then
+    log "No parked (alias) domains detected."
+else
     log "Processing parked (alias) domains.."
     for parked in "${parked_domains_array[@]}"; do
         create_domain "$parked" "alias"
     done
+fi
+
     
+
+
+if [ -z "$addon_domains_count" ]; then
+    log "No addon domains detected."
+else
     log "Processing addon domains.."
     for addon in "${addon_domains_array[@]}"; do
         create_domain "$addon" "addon"
     done
+fi
+
     
-       
+
+if [ -z "$filtered_sub_domains_count" ]; then
+    log "No subdomains detected."
+else
     log "Processing sub-domains.."
     for filtered_sub in "${filtered_sub_domains[@]}"; do
         create_domain "$filtered_sub" "subdomain"
         #TODO: create record in dns zone instead of separate domain if only dns zone and no folder!
     done
-    
-        log "Finished importing $current_domain_count domains"
+fi
+       
+
+log "Finished importing $current_domain_count domains"
 
 else
     log "FATAL ERROR: domains file userdata/main is missing in backup file."
