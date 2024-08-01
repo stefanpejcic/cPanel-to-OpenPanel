@@ -984,11 +984,11 @@ emails, nodejs/python apps and postgres are not yet supported!
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     
     fix_perms
-    restore_domains #shouls use addons file for addons
+    restore_php_version "$cpanel_username" "$php_version" # php v needs to run before domains
+    restore_domains
     restore_dns_zones
     restore_mysql "$mysqldir"
     restore_cron
-    restore_php_version "$cpanel_username" "$php_version"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
     restore_wordpress "$real_backup_files_path" "$cpanel_username"
