@@ -11,6 +11,9 @@ def remove_localhost_lines_and_replace_grant_usage(input_path, output_path):
                 if 'localhost' in line:
                     continue
 
+                # Replace escaped underscores
+                line = line.replace(r'\_', '_')
+                
                 # Check if the line starts with "GRANT USAGE ON"
                 if line.startswith('GRANT USAGE ON'):
                     # Extract the username and password from the line using regex
