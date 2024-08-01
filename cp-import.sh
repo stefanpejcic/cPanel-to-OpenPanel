@@ -478,8 +478,8 @@ restore_mysql() {
         log "Importing database grants"
         python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql
  
-        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql   >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;"
+        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql  >/dev/null 2>&1
+        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;'"
 
         # STEP 5. Grant phpMyAdmin access
         grant_phpmyadmin_access "$cpanel_username"
