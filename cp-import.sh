@@ -461,12 +461,12 @@ restore_mysql() {
                 log "Creating database: $db_name (${current_db}/${total_databases})"           
                 apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
                 docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create"
+                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
     
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
                 docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1     
-                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql"
+                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
                 current_db=$((current_db + 1))
             done
             log "Finished processing $current_db databases"
@@ -478,10 +478,11 @@ restore_mysql() {
         python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql
  
         docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql  >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;'"
+        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
         # STEP 5. Grant phpMyAdmin access
         grant_phpmyadmin_access "$cpanel_username"
+
     else
         log "No MySQL databases found to restore"
     fi
