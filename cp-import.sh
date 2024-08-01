@@ -304,8 +304,20 @@ parse_cpanel_metadata() {
     
     main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
 
-    php_version=$(grep -oP 'phpversion:\s*\K\S+' ${real_backup_files_path}/userdata/${main_domain})
     
+    # Cloudlinux
+    cfg_file="${real_backup_files_path}/homedir/.cl.selector/defaults.cfg"
+    if [ -f "$cfg_file" ]; then
+        php_version=$(grep '^php\s*=' "$cfg_file" | awk -F '=' '{print $2}' | tr -d '[:space:]')
+        if [ -n "$php_version" ]; then
+            log "Detected PHP $php_version from Cloudlinux PHP Selector."
+        else
+            php_version="inherit"
+        fi
+    else
+        php_version="inherit"
+    fi
+
     cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/${cpanel_username})
     if [ -z "$cpanel_email" ]; then
         cpanel_email=" " #set blank
@@ -366,7 +378,7 @@ restore_php_version() {
     local php_version="$2"
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore PHP version $php_version for user $username"
+        log "DRY RUN: Would check/install PHP version $php_version for user $username"
         return
     fi
 
@@ -374,14 +386,26 @@ restore_php_version() {
     if [ "$php_version" == "inherit" ]; then
         log "PHP version is set to inherit. No changes will be made."
     else
-        log "Restoring PHP version $php_version for user $username"
-        local current_version=$(opencli php-default_php_version "$username")
+        log "Checking if current PHP version installed matches the version from backup"
+        local current_version=$(opencli php-default_php_version "$username" | sed 's/Default PHP version for user.*: //')
         if [ "$current_version" != "$php_version" ]; then
             local installed_versions=$(opencli php-enabled_php_versions "$username")
             if ! echo "$installed_versions" | grep -q "$php_version"; then
-                opencli php-install_php_version "$username" "$php_version"
+            log "Default PHP version $php_version from backup is not present in the container, installing.."            
+                output=$(opencli php-install_php_version "$username" "$php_version" 2>&1)
+                while IFS= read -r line; do
+                    log "$line"
+                done <<< "$output"
+                
+                #SET AS DEFAULT PHP VERSION
+                log "Setting newly installed PHP $php_version as the default version for all new domains."
+                output=$(opencli php-default_php_version "$username" --update "$php_version" 2>&1)
+                while IFS= read -r line; do
+                    log "$line"
+                done <<< "$output"              
             fi
-            opencli php-enabled_php_versions --update "$username" "$php_version"
+        else
+        log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version) "
         fi
     fi
 }
