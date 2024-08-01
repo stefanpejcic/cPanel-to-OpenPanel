@@ -646,6 +646,8 @@ restore_files() {
     # Move all files from public_html to main domain dir
     log "Moving main domain files from public_html to $main_domain directory."
     mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain
+    rm /home/$cpanel_username/www  #since www is symlink to public_html
+        
     #shopt -s dotglob
     #mv "/home/$cpanel_username/public_html"/* "/home/$cpanel_username/$main_domain"/
     #shopt -u dotglob
@@ -945,14 +947,21 @@ emails, nodejs/python apps and postgres are not yet supported!
 
     # restore data
     restore_files
-    restore_domains
+    restore_domains #shouls use addons file for addons
+    restore_dns_zones
     restore_mysql "$mysqldir"
     restore_cron
     restore_php_version "$cpanel_username" "$php_version"
     restore_ssl "$cpanel_username"
     restore_ssh "$cpanel_username"
-    restore_dns_zones
     restore_wordpress "$real_backup_files_path" "$cpanel_username"
+
+    #todo:
+    # ftp accounts from proftpdpasswd file
+    
+
+
+
 
     log "Fixing file permissions for user $cpanel_username"
     opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
