@@ -655,10 +655,14 @@ restore_files() {
     #shopt -s dotglob
     #mv "/home/$cpanel_username/public_html"/* "/home/$cpanel_username/$main_domain"/
     #shopt -u dotglob
-    
+}
+
+# PERMISSIONS
+fix_perms(){
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
+
 
 # WORDPRESS SITES
 restore_wordpress() {
@@ -954,6 +958,7 @@ emails, nodejs/python apps and postgres are not yet supported!
     # create new user
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     
+    fix_perms
     restore_domains #shouls use addons file for addons
     restore_dns_zones
     restore_mysql "$mysqldir"
