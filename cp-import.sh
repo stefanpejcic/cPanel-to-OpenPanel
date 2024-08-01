@@ -609,7 +609,7 @@ restore_files() {
         return
     fi
 
-    rsync -a --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
+    rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
         log "$line"
     done
     
