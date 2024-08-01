@@ -275,7 +275,7 @@ locate_backup_directories() {
         log "WARNING: Unable to locate MySQL directory in the backup"
     fi
 
-    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql-auth.json" | head -n 1)
+    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql" | head -n 1)
     if [ -z "$mysql_conf" ]; then
         log "WARNING: Unable to locate MySQL grants file in the backup"
     fi
@@ -439,6 +439,12 @@ restore_mysql() {
         old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
         log "Replacing old server IP: $old_ip with new IP: $new_ip in database grants"  
         sed -i "s/$old_ip/$new_ip/g" $mysql_conf
+        
+        old_hostname=$(cat meta/hostname)
+        log "Removing old hostname $old_hostname from database grants"          
+        sed -i '/$old_hostname/d' $mysql_conf
+
+
 
         # STEP 2. start mysql for user
         log "Initializing MySQL service for user"
@@ -468,17 +474,14 @@ restore_mysql() {
         else
             log "WARNING: No MySQL databases found"
         fi
-        # STEP 4. import grants 
+        # STEP 4. import grants and flush privileges
         log "Importing database grants"
-        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql-auth.json ${real_backup_files_path}/mysql.sql-auth.sql
+        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql ${real_backup_files_path}/mysql.TEMPORARY.sql
  
-        docker cp ${real_backup_files_path}/mysql.sql-auth.sql $cpanel_username:/tmp/mysql.sql-auth.sql   >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.sql-auth.sql"
+        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql   >/dev/null 2>&1
+        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;"
 
-        # STEP 5. flush privileges
-        docker exec $cpanel_username bash -c "mysql -e 'FLUSH PRIVILEGES;'"
-
-        # STEP 6. Grant phpMyAdmin access
+        # STEP 5. Grant phpMyAdmin access
         grant_phpmyadmin_access "$cpanel_username"
     else
         log "No MySQL databases found to restore"
