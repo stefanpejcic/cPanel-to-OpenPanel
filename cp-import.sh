@@ -148,6 +148,7 @@ validate_plan_exists(){
 ###############################################################
 # MAIN FUNCTIONS
 
+# CHECK EXTENSION AND DETERMINE SIZE
 check_if_valid_cp_backup(){
     local backup_location="$1"
 
@@ -195,6 +196,7 @@ check_if_valid_cp_backup(){
     esac
 }
 
+# CHECK DISK USAGE
 check_if_disk_available(){
     TMP_DIR="/tmp"
     HOME_DIR="/home"
@@ -223,7 +225,7 @@ check_if_disk_available(){
     fi
 }
 
-# Extract
+# EXTRACT
 extract_cpanel_backup() {
     backup_location="$1"
     backup_dir="$2"
@@ -254,7 +256,7 @@ extract_cpanel_backup() {
     done
 }
 
-# Function to locate important directories in the extracted backup
+# LOCATE FILES IN EXTRACTED BACKUP
 locate_backup_directories() {
     log "Locating important files in the extracted backup"
 
@@ -291,7 +293,7 @@ locate_backup_directories() {
     log "cPanel configuration: $cp_file"
 }
 
-# Function to parse cPanel backup metadata
+# CPANEL BACKUP METADATA
 parse_cpanel_metadata() {
     log "Parsing cPanel metadata..."
 
@@ -315,6 +317,7 @@ parse_cpanel_metadata() {
     log "PHP Version: $php_version"
 }
 
+# CHECK BEFORE EXPORT
 check_if_user_exists(){  
     backup_filename=$(basename "$backup_location")
     cpanel_username="${backup_filename##*_}"
@@ -333,7 +336,7 @@ check_if_user_exists(){
     fi
 }
 
-# Function to create or get user
+# CREATE NEW USER
 create_new_user() {
     local username="$1"
     local email="$3"
@@ -357,7 +360,7 @@ create_new_user() {
     fi
 }
 
-# Function to restore PHP version
+# PHP VERSION
 restore_php_version() {
     local username="$1"
     local php_version="$2"
@@ -382,6 +385,8 @@ restore_php_version() {
         fi
     fi
 }
+
+# PHPMYADMIN
 grant_phpmyadmin_access() {
     local username="$1"
 
@@ -399,7 +404,8 @@ grant_phpmyadmin_access() {
     log "Access granted to phpMyAdmin user for all databases of $username"
 
 }
-# Function to restore MySQL databases and users
+
+# MYSQL
 restore_mysql() {
     local mysql_dir="$1"
     local sandbox_warning_logged=false
@@ -479,6 +485,7 @@ restore_mysql() {
     fi
 }
 
+# SSL CACHE
 refresh_ssl_file() {
     local username="$1"
     
@@ -492,7 +499,7 @@ refresh_ssl_file() {
 
 }
 
-# Function to restore SSL certificates
+# SSL CERTIFICATES
 restore_ssl() {
     local username="$1"
 
@@ -522,7 +529,7 @@ restore_ssl() {
     
 }
 
-# Function to restore SSH access
+# SSH KEYS
 restore_ssh() {
     local username="$1"
 
@@ -543,7 +550,7 @@ restore_ssh() {
     fi
 }
 
-# Function to restore DNS zones
+# DNS ZONES
 restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
 
@@ -599,7 +606,7 @@ restore_dns_zones() {
     fi
 }
 
-# Function to restore files
+# HOME DIR
 restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring files ($du_needed_for_home) to /home/$cpanel_username/"
@@ -636,7 +643,7 @@ restore_files() {
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
-# Function to restore WordPress sites
+# WORDPRESS SITES
 restore_wordpress() {
     local real_backup_files_path="$1"
     local username="$2"
@@ -660,154 +667,188 @@ restore_wordpress() {
 
 
 
-restore_domains(){          
+# DOMAINS
+restore_domains() {          
+    if [ -f "$real_backup_files_path/userdata/main" ]; then
+        file_path="$real_backup_files_path/userdata/main"
+        # Initialize variables
+        main_domain=""
+        parked_domains=""
+        sub_domains=""
+        addon_domains=""
+        
+        # Read the file line by line
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^main_domain: ]]; then
+                main_domain=$(echo "$line" | awk '{print $2}')
+            elif [[ "$line" =~ ^parked_domains: ]]; then
+                parked_domains=$(echo "$line" | awk '{print $2}' | tr -d '[]')
+            elif [[ "$line" =~ ^sub_domains: ]]; then
+                sub_domains_section=true
+                continue
+            elif [[ "$line" =~ ^addon_domains: ]]; then
+                addon_domains_section=true
+                continue
+            fi
 
-if [ -f "$real_backup_files_path/userdata/main" ]; then
-    file_path="$real_backup_files_path/userdata/main"
-    
-    # Extract data from the file using `grep` and `sed`
-    main_domain=$(grep '^main_domain:' "$file_path" | sed 's/main_domain: //')
-    parked_domains=$(grep '^parked_domains:' "$file_path" | sed 's/parked_domains: //')
-    sub_domains=$(grep '^sub_domains:' -A 10 "$file_path" | sed -n '/^- /{s/^- //;p}')
-    addon_domains=$(grep '^addon_domains:' -A 10 "$file_path" | sed -n '/^[^ ]/{s/: / /;p}')
-    
-    IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
-    IFS=',' read -r -a sub_domains_array <<< "$sub_domains"
-    IFS=',' read -r -a addon_domains_array <<< "$addon_domains"
+            if [[ "$sub_domains_section" == true ]]; then
+                if [[ "$line" =~ ^[[:space:]]+- ]]; then
+                    sub_domains+=$(echo "$line" | awk '{print $2}')$'\n'
+                else
+                    sub_domains_section=false
+                fi
+            fi
 
-    #sub_domains_array=()
-    #addon_domains_array=()
-    
-    
-    # Parse sub_domains
-    while IFS= read -r domain; do
-        sub_domains_array+=("$domain")
-    done <<< "$sub_domains"
-    
-    # Parse addon_domains
-    while IFS= read -r line; do
-        domain=$(echo "$line" | awk '{print $1}')
-        target=$(echo "$line" | awk '{print $2}')
-        addon_domains_array+=("$domain")
-    done <<< "$addon_domains"
-    
+            if [[ "$addon_domains_section" == true ]]; then
+                if [[ "$line" =~ ^[[:space:]]*[^:]+:[[:space:]]*[^[:space:]]+$ ]]; then
+                    domain=$(echo "$line" | awk -F: '{print $1}' | tr -d '[:space:]')
+                    # Avoid adding invalid entries and trailing colons
+                    if [[ -n "$domain" && "$domain" != "main_domain" && "$domain" != "parked_domains" ]]; then
+                        addon_domains+="$domain"$'\n'
+                    fi
+                else
+                    addon_domains_section=false
+                fi
+            fi
+        done < "$file_path"        
+   
+        # Parse parked_domains
+        if [[ -z "$parked_domains" ]]; then
+            parked_domains_array=()
+        else
+            IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
+        fi
+        
+        sub_domains_array=()
+        addon_domains_array=()
+        
+        # Parse sub_domains
+        while IFS= read -r domain; do
+            if [[ -n "$domain" ]]; then
+                sub_domains_array+=("$domain")
+            fi
+        done <<< "$sub_domains"
+        
+        # Parse addon_domains
+        while IFS= read -r domain; do
+            if [[ -n "$domain" ]]; then
+                addon_domains_array+=("$domain")
+            fi
+        done <<< "$addon_domains"
 
-    # Filter out subdomains that are essentially addon_domain.$main_domain
-    filtered_sub_domains=()
-    for sub_domain in "${sub_domains_array[@]}"; do
-        is_addon=false
-        for addon in "${addon_domains_array[@]}"; do
-            if [[ "$sub_domain" == "$addon.$main_domain" ]]; then
-                is_addon=true
-                break
+        # Filter out subdomains that are essentially addon_domain.$main_domain
+        filtered_sub_domains=()
+        for sub_domain in "${sub_domains_array[@]}"; do
+            trimmed_sub_domain=$(echo "$sub_domain" | xargs)
+            is_addon=false
+            for addon in "${addon_domains_array[@]}"; do
+                if [[ "$trimmed_sub_domain" == "$addon.$main_domain" ]]; then
+                    is_addon=true
+                    break
+                fi
+            done
+            if [ "$is_addon" = false ]; then
+                filtered_sub_domains+=("$trimmed_sub_domain")
             fi
         done
-        if [ "$is_addon" = false ]; then
-            filtered_sub_domains+=("$sub_domain")
+
+        main_domain_count=1
+
+        addon_domains_count=${#addon_domains_array[@]}
+        if [ "${#addon_domains_array[@]}" -eq 1 ] && [ -z "${addon_domains_array[0]}" ]; then
+            addon_domains_count=0
+            log "No addon domains detected."
+        else
+            log "Addon domains ($addon_domains_count): ${addon_domains_array[@]}"
         fi
-    done
+
+        parked_domains_count=${#parked_domains_array[@]}
+        if [ "${#parked_domains_array[@]}" -eq 1 ] && [ -z "${parked_domains_array[0]}" ]; then
+            parked_domains_count=0
+            log "No parked domains detected."
+        else
+            log "Parked domains ($parked_domains_count): ${parked_domains_array[@]}"
+        fi
+
+        filtered_sub_domains_count=${#filtered_sub_domains[@]}
+        if [ "${#filtered_sub_domains[@]}" -eq 1 ] && [ -z "${filtered_sub_domains[0]}" ]; then
+            filtered_sub_domains_count=0
+            log "No subdomains detected."
+        else
+            log "Subdomains ($filtered_sub_domains_count): ${filtered_sub_domains[@]}"
+        fi
 
 
-main_domain_count=1
+        domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
 
-if [ -z "$addon_domains_count" ]; then
-    addon_domains_count=0
-else
-    addon_domains_count=${#addon_domains_array[@]}
-fi
+        log "Detected a total of $domains_total_count domains for user."
 
-if [ -z "$parked_domains" ]; then
-    parked_domains_count=0
-else
-    parked_domains_count=${#parked_domains_array[@]}
-fi
+        current_domain_count=0
 
-if [ -z "$filtered_sub_domains" ]; then
-    filtered_sub_domains_count=0
-else
-    filtered_sub_domains_count=${#filtered_sub_domains[@]}
-fi
-
-domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
-
-
-
-current_domain_count=0
-
-    create_domain(){
+        create_domain(){
             domain="$1"
             type="$2"
 
             current_domain_count=$((current_domain_count + 1))
-            log "Restoring domain: $domain (${current_domain_count}/${domains_total_count})"
-     
+            log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
+            
             if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore $type domain $domain"
+                log "DRY RUN: Would restore $type $domain"
             elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                log "Restoring $type domain $domain (${current_domain_count}/${domains_total_count})"
                 output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
-                done <<< "$output"     
+                done <<< "$output"
             else
-                log "WARNING: $type domain $domain already exists and will not be added to this user."
+                log "WARNING: $type $domain already exists and will not be added to this user."
             fi    
-    }
+        }
 
+        # Process the domains
+        log "Processing main (primary) domain.."
+        create_domain "$main_domain" "main domain"
 
+        if [ "$parked_domains_count" -eq 0 ]; then
+            log "No parked (alias) domains detected."
+        else
+            log "Processing parked (alias) domains.."
+            for parked in "${parked_domains_array[@]}"; do
+                create_domain "$parked" "alias domain"
+            done
+        fi
 
+        if [ "$addon_domains_count" -eq 0 ]; then
+            log "No addon domains detected."
+        else
+            log "Processing addon domains.."
+            for addon in "${addon_domains_array[@]}"; do
+                create_domain "$addon" "addon domain"
+            done
+        fi
 
+        if [ "$filtered_sub_domains_count" -eq 0 ]; then
+            log "No subdomains detected."
+        else
+            log "Processing sub-domains.."
+            for filtered_sub in "${filtered_sub_domains[@]}"; do
+                create_domain "$filtered_sub" "subdomain"
+                #TODO: create record in dns zone instead of separate domain if only dns zone and no folder!
+            done
+        fi
 
+        log "Finished importing $domains_total_count domains"
 
-
-    
-log "Processing main (primary) domain.."
-create_domain "$main_domain" "main"
-
-
-if [ -z "$parked_domains" ]; then
-    log "No parked (alias) domains detected."
-else
-    log "Processing parked (alias) domains.."
-    for parked in "${parked_domains_array[@]}"; do
-        create_domain "$parked" "alias"
-    done
-fi
-
-    
-
-
-if [ -z "$addon_domains_count" ]; then
-    log "No addon domains detected."
-else
-    log "Processing addon domains.."
-    for addon in "${addon_domains_array[@]}"; do
-        create_domain "$addon" "addon"
-    done
-fi
-
-    
-
-if [ -z "$filtered_sub_domains_count" ]; then
-    log "No subdomains detected."
-else
-    log "Processing sub-domains.."
-    for filtered_sub in "${filtered_sub_domains[@]}"; do
-        create_domain "$filtered_sub" "subdomain"
-        #TODO: create record in dns zone instead of separate domain if only dns zone and no folder!
-    done
-fi
-       
-
-log "Finished importing $current_domain_count domains"
-
-else
-    log "FATAL ERROR: domains file userdata/main is missing in backup file."
-    exit 1
-fi
+    else
+        log "FATAL ERROR: domains file userdata/main is missing in backup file."
+        exit 1
+    fi
 }
 
-# Function to restore cron jobs
+
+
+
+
+# CRONJOB
 restore_cron() {
     log "Restoring cron jobs for user $cpanel_username"
 
@@ -849,7 +890,7 @@ main() {
 
 Currently supported features:
 - FILES AND FOLDERS
-- MAIN AND ADDON DOMAINS
+- DOMAINS: MAIN, ADDONS, ALIASES, SUBDOMAINS
 - DNS ZONES
 - MYSQL DATABASES, USERS AND THEIR GRANTS
 - SSH KEYS
