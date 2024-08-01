@@ -946,11 +946,14 @@ emails, nodejs/python apps and postgres are not yet supported!
     locate_backup_directories
     parse_cpanel_metadata
 
-    # create new user
-    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
+
 
     # restore data
     restore_files
+
+    # create new user
+    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
+    
     restore_domains #shouls use addons file for addons
     restore_dns_zones
     restore_mysql "$mysqldir"
