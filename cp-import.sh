@@ -974,9 +974,9 @@ emails, nodejs/python apps and postgres are not yet supported!
 
 
 
-
-    log "Fixing file permissions for user $cpanel_username"
-    opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
+    # TEMPORARY REPALCED BY fix_perms FUNC
+    #log "Fixing file permissions for user $cpanel_username"
+    #opencli files-fix_permissions "$cpanel_username" "/home/$cpanel_username"
 
     # Cleanup
     cleanup
