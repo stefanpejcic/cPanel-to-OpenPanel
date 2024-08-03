@@ -22,6 +22,13 @@ log() {
     echo "[$timestamp] $message" | tee -a "$log_file"
 }
 
+DEBUG=true  # Set this to true to enable debug logging
+
+debug_log() {
+    if [ "$DEBUG" = true ]; then
+        log "DEBUG: $1"
+    fi
+}
 handle_error() {
     log "FATAL ERROR: An error occurred in function '$1' on line $2"
     cleanup
@@ -295,38 +302,73 @@ locate_backup_directories() {
 
 # CPANEL BACKUP METADATA
 parse_cpanel_metadata() {
-    log "Parsing cPanel metadata..."
-
-    local metadata_file="$real_backup_files_path/userdata/main"
-    if [ ! -f "$metadata_file" ]; then
-        metadata_file="$real_backup_files_path/meta/user.yaml"
-    fi
+    log "Starting to parse cPanel metadata..."
     
-    main_domain=$(grep -oP 'main_domain: \K\S+' "$metadata_file" | tr -d '\r')
-
+    cp_file="${real_backup_files_path}/cp/${cpanel_username}"
+    debug_log "Attempting to parse metadata from file: $cp_file"
     
-    # Cloudlinux
-    cfg_file="${real_backup_files_path}/homedir/.cl.selector/defaults.cfg"
-    if [ -f "$cfg_file" ]; then
-        php_version=$(grep '^php\s*=' "$cfg_file" | awk -F '=' '{print $2}' | tr -d '[:space:]')
-        if [ -n "$php_version" ]; then
-            log "Detected PHP $php_version from Cloudlinux PHP Selector."
+    if [ ! -f "$cp_file" ]; then
+        log "WARNING: cp file $cp_file not found. Using default values."
+        main_domain=""
+        cpanel_email=""
+        php_version="inherit"
+    else
+        # Function to get value from cp file with default
+        get_cp_value() {
+            local key="$1"
+            local default="$2"
+            local value
+            value=$(grep "^$key=" "$cp_file" | cut -d'=' -f2-)
+            if [ -z "$value" ]; then
+                echo "$default"
+            else
+                echo "$value"
+            fi
+        }
+
+        main_domain=$(get_cp_value "DNS" "")
+        cpanel_email=$(get_cp_value "CONTACTEMAIL" "")
+        [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "CONTACTEMAIL2" "")
+        [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "EMAIL" "")
+
+        # Check for Cloudlinux PHP Selector
+        cfg_file="${real_backup_files_path}/homedir/.cl.selector/defaults.cfg"
+        if [ -f "$cfg_file" ]; then
+            php_version=$(grep '^php\s*=' "$cfg_file" | awk -F '=' '{print $2}' | tr -d '[:space:]')
+            [ -z "$php_version" ] && php_version="inherit"
         else
             php_version="inherit"
         fi
-    else
-        php_version="inherit"
+
+        # Additional metadata
+        ip_address=$(get_cp_value "IP" "")
+        plan=$(get_cp_value "PLAN" "default")
+        max_addon=$(get_cp_value "MAXADDON" "0")
+        max_ftp=$(get_cp_value "MAXFTP" "unlimited")
+        max_sql=$(get_cp_value "MAXSQL" "unlimited")
+        max_pop=$(get_cp_value "MAXPOP" "unlimited")
+        max_sub=$(get_cp_value "MAXSUB" "unlimited")
+        
+        log "Additional metadata parsed:"
+        log "IP Address: $ip_address"
+        log "Plan: $plan"
+        log "Max Addon Domains: $max_addon"
+        log "Max FTP Accounts: $max_ftp"
+        log "Max SQL Databases: $max_sql"
+        log "Max Email Accounts: $max_pop"
+        log "Max Subdomains: $max_sub"
     fi
 
-    cpanel_email=$(grep -oP 'CONTACTEMAIL=\K\S+' ${real_backup_files_path}/cp/${cpanel_username})
-    if [ -z "$cpanel_email" ]; then
-        cpanel_email=" " #set blank
-    fi
+    # Ensure we have at least an empty string for each variable
+    main_domain="${main_domain:-}"
+    cpanel_email="${cpanel_email:-}"
+    php_version="${php_version:-inherit}"
 
-    log "cPanel metadata parsed successfully."
-    log "Email: $cpanel_email"
-    log "Main Domain: $main_domain"
+    log "cPanel metadata parsed:"
+    log "Main Domain: ${main_domain:-Not found}"
+    log "Email: ${cpanel_email:-Not found}"
     log "PHP Version: $php_version"
+    log "Finished parsing cPanel metadata."
 }
 
 # CHECK BEFORE EXPORT
