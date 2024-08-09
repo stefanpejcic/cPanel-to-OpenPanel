@@ -58,6 +58,9 @@ define_data_and_log(){
                                 ;;
             --dry-run )         DRY_RUN=true
                                 ;;
+            --post-hook )       shift
+                                post_hook=$1
+                                ;;
             * )                 usage
         esac
         shift
@@ -1050,6 +1053,20 @@ emails, nodejs/python apps and postgres are not yet supported!
     log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
     log "SUCCESS: Import for user $cpanel_username completed successfully."
+
+
+# run after install if posthook provided
+if [ -n "$post_hook" ]; then
+    if [ -x "$post_hook" ]; then
+        log "Executing post-hool script.."
+        "$post_hook" "$cpanel_username"
+    else
+        log "WARNING: Post-hook file '$post_hook' is not executable or not found."
+        exit 1
+    fi
+fi
+
+
 }
 
 # MAIN FUNCTION
