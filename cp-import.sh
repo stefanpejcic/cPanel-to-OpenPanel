@@ -431,25 +431,25 @@ restore_php_version() {
         log "PHP version is set to inherit. No changes will be made."
     else
         log "Checking if current PHP version installed matches the version from backup"
-        local current_version=$(opencli php-default_php_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
+        local current_version=$(opencli php-default_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
         if [ "$current_version" != "$php_version" ]; then
-            local installed_versions=$(opencli php-enabled_php_versions "$cpanel_username")
+            local installed_versions=$(opencli php-installed_versions "$cpanel_username")
             if ! echo "$installed_versions" | grep -q "$php_version"; then
-            log "Default PHP version $php_version from backup is not present in the container, installing.."
-                output=$(opencli php-install_php_version "$cpanel_username" "$php_version" 2>&1)
+                log "Default PHP version $php_version from backup is not present in the container, installing.."
+                output=$(opencli php-install_version "$cpanel_username" "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"
 
-                #SET AS DEFAULT PHP VERSION
+                # Set as default PHP version
                 log "Setting newly installed PHP $php_version as the default version for all new domains."
-                output=$(opencli php-default_php_version "$cpanel_username" --update "$php_version" 2>&1)
+                output=$(opencli php-default_version "$cpanel_username" --update "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"
             fi
         else
-        log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version) "
+            log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version)"
         fi
     fi
 }
@@ -597,7 +597,6 @@ restore_ssl() {
     else
         log "No SSL certificates found to restore"
     fi
-
 }
 
 # SSH KEYS
@@ -755,7 +754,6 @@ restore_wordpress() {
         log "No WordPress data found to restore"
     fi
 }
-
 
 
 
@@ -924,7 +922,7 @@ restore_domains() {
             log "Processing sub-domains.."
             for filtered_sub in "${filtered_sub_domains[@]}"; do
                 create_domain "$filtered_sub" "subdomain"
-                #TODO: create record in dns zone instead of separate domain if only dns zone and no folder!
+                # TODO: create record in DNS zone instead of separate domain if only DNS zone and no folder!
             done
         fi
 
@@ -935,10 +933,6 @@ restore_domains() {
         exit 1
     fi
 }
-
-
-
-
 
 # CRONJOB
 restore_cron() {
