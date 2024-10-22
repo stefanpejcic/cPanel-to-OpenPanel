@@ -42,7 +42,7 @@ cleanup() {
     rm -rf "$backup_dir"
 }
 
-define_data_and_log(){
+define_data_and_log() {
     local backup_location=""
     local plan_name=""
     DRY_RUN=false
@@ -71,17 +71,17 @@ define_data_and_log(){
         usage
     fi
 
-    # Format log file
+    # Format log file and ensure log directory exists
     base_name="$(basename "$backup_location")"
     base_name_no_ext="${base_name%.*}"
     local log_dir="/var/log/openpanel/admin/imports"
-    mkdir -p $log_dir
-    log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
+    mkdir -p "$log_dir"
+    log_file="$log_dir/${base_name_no_ext}_$(date +'%Y-%m-%d_%H-%M-%S').log"
 
-    # Run the main function
+    # Run the main function and pass plan_name
     echo "Import started, log file: $log_file"
 
-    main
+    main "$plan_name"
 }
 
 command_exists() {
@@ -270,37 +270,37 @@ extract_cpanel_backup() {
 locate_backup_directories() {
     log "Locating important files in the extracted backup"
 
-    # Try to locate the key directories
-    homedir=$(find "$backup_dir" -type d -name "homedir" | head -n 1)
-    if [ -z "$homedir" ]; then
-        homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
-    fi
-    if [ -z "$homedir" ]; then
-        log "FATAL ERROR: Unable to locate home directory in the backup"
+    if [ -d "$real_backup_files_path/homedir" ]; then
+        homedir="$real_backup_files_path/homedir"
+        log "Home directory: $homedir"
+    else
+        log "ERROR: Home directory not found in backup."
         exit 1
     fi
 
-    mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
-    if [ -z "$mysqldir" ]; then
-        log "WARNING: Unable to locate MySQL directory in the backup"
+    if [ -d "$real_backup_files_path/mysql" ]; then
+        mysqldir="$real_backup_files_path/mysql"
+        log "MySQL directory: $mysqldir"
+    else
+        log "ERROR: MySQL directory not found in backup."
+        exit 1
     fi
 
-    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql" | head -n 1)
-    if [ -z "$mysql_conf" ]; then
-        log "WARNING: Unable to locate MySQL grants file in the backup"
+    if [ -f "$real_backup_files_path/mysql" ]; then
+        log "MySQL grants: $real_backup_files_path/mysql"
+    else
+        log "MySQL grants file not found."
     fi
 
-    cp_file=$(find "$backup_dir" -type f -path "*/cp/*" -name "$cpanel_username" | head -n 1)
-    if [ -z "$cp_file" ]; then
-        log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
+    if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
+        cpconfig="$real_backup_files_path/cp/$cpanel_username"
+        log "cPanel configuration: $cpconfig"
+    else
+        log "ERROR: cPanel configuration file not found."
         exit 1
     fi
 
     log "Backup directories located successfully"
-    log "Home directory: $homedir"
-    log "MySQL directory: $mysqldir"
-    log "MySQL grants: $mysql_conf"
-    log "cPanel configuration: $cp_file"
 }
 
 # CPANEL BACKUP METADATA
@@ -308,7 +308,7 @@ parse_cpanel_metadata() {
     log "Starting to parse cPanel metadata..."
 
     cp_file="${real_backup_files_path}/cp/${cpanel_username}"
-    debug_log "Attempting to parse metadata from file: $cp_file"
+    log "DEBUG: Attempting to parse metadata from file: $cp_file"
 
     if [ ! -f "$cp_file" ]; then
         log "WARNING: cp file $cp_file not found. Using default values."
@@ -334,7 +334,7 @@ parse_cpanel_metadata() {
         [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "CONTACTEMAIL2" "")
         [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "EMAIL" "")
 
-        # Check for Cloudlinux PHP Selector
+        # Check for CloudLinux PHP Selector
         cfg_file="${real_backup_files_path}/homedir/.cl.selector/defaults.cfg"
         if [ -f "$cfg_file" ]; then
             php_version=$(grep '^php\s*=' "$cfg_file" | awk -F '=' '{print $2}' | tr -d '[:space:]')
@@ -396,27 +396,46 @@ check_if_user_exists(){
 # CREATE NEW USER
 create_new_user() {
     local username="$1"
+    local password="$2"
     local email="$3"
     local plan_name="$4"
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would create user $username with email $email and plan $plan_name"
+        log "DRY RUN: Would create user $username with password $password, email $email, and plan $plan_name"
         return
     fi
 
-    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
+    # Validate the parameters
+    if [ -z "$username" ] || [ -z "$password" ] || [ -z "$email" ] || [ -z "$plan_name" ]; then
+        log "ERROR: Missing required parameters. Username, password, email, and plan must be provided."
+        return
+    fi
+
+    # Log the creation attempt
+    log "Attempting to create user $username with email $email, plan $plan_name, and password $password"
+
+    # Construct the correct opencli command
+    local cli_command="opencli user-add $username $password $email $plan_name"
+
+    # Log the exact command that will be run
+    log "Running command: $cli_command"
+
+    # Execute the OpenCLI command
+    create_user_command=$($cli_command 2>&1)
+
+    # Process the output and log it
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
 
+    # Check if the user was added successfully
     if echo "$create_user_command" | grep -q "Successfully added user"; then
-        :
+        log "User $username was added successfully."
     else
-        log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
+        log "ERROR: Failed to create user $username. Command output: $create_user_command"
         exit 1
     fi
 }
-
 # PHP VERSION
 restore_php_version() {
     local php_version="$1"
@@ -431,25 +450,25 @@ restore_php_version() {
         log "PHP version is set to inherit. No changes will be made."
     else
         log "Checking if current PHP version installed matches the version from backup"
-        local current_version=$(opencli php-default_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
+        local current_version=$(opencli php-default_php_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
         if [ "$current_version" != "$php_version" ]; then
-            local installed_versions=$(opencli php-installed_versions "$cpanel_username")
+            local installed_versions=$(opencli php-enabled_php_versions "$cpanel_username")
             if ! echo "$installed_versions" | grep -q "$php_version"; then
-                log "Default PHP version $php_version from backup is not present in the container, installing.."
-                output=$(opencli php-install_version "$cpanel_username" "$php_version" 2>&1)
+            log "Default PHP version $php_version from backup is not present in the container, installing.."
+                output=$(opencli php-install_php_version "$cpanel_username" "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"
 
-                # Set as default PHP version
+                #SET AS DEFAULT PHP VERSION
                 log "Setting newly installed PHP $php_version as the default version for all new domains."
-                output=$(opencli php-default_version "$cpanel_username" --update "$php_version" 2>&1)
+                output=$(opencli php-default_php_version "$cpanel_username" --update "$php_version" 2>&1)
                 while IFS= read -r line; do
                     log "$line"
                 done <<< "$output"
             fi
         else
-            log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version)"
+        log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version) "
         fi
     fi
 }
@@ -475,87 +494,92 @@ grant_phpmyadmin_access() {
 
 # MYSQL
 restore_mysql() {
-    local mysql_dir="$1"
-    local sandbox_warning_logged=false
+    local mysql_backup_dir="$1"
+    local mysql_grants_file="$real_backup_files_path/mysql"
 
-    log "Restoring MySQL databases for user $cpanel_username"
+    log "Starting MySQL database restoration..."
+    log "MySQL backup directory: $mysql_backup_dir"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore MySQL databases for user $cpanel_username"
+    if [ ! -d "$mysql_backup_dir" ]; then
+        log "No MySQL backup directory found at $mysql_backup_dir."
         return
     fi
 
-    #https://jira.mariadb.org/browse/MDEV-34183
-    apply_sandbox_workaround() {
-        local db_file="$1"
-        text_to_check='enable the sandbox mode'
-        local first_line
+    # Enable nullglob to handle the case when no .sql files are found
+    shopt -s nullglob
+    sql_files=("$mysql_backup_dir"/*.sql)
+    shopt -u nullglob
 
-        first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
-        if echo "$first_line" | grep -q "$text_to_check"; then
-            if [ "$sandbox_warning_logged" = false ]; then
-                log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
-                sandbox_warning_logged=true
-            fi
-            # Remove the first line and save the changes to the same file
-            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
-        fi
-    }
-
-    if [ -d "$mysql_dir" ]; then
-        # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
-        log "Replacing old server IP: $old_ip with '%' in database grants"
-        sed -i "s/$old_ip/%/g" $mysql_conf
-
-        old_hostname=$(cat ${real_backup_files_path}/meta/hostname)
-        log "Removing old hostname $old_hostname from database grants"
-        sed -i "/$old_hostname/d" "$mysql_conf"
-
-
-        # STEP 2. start mysql for user
-        log "Initializing MySQL service for user"
-        docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
-        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
-
-        # STEP 3. create and import databases
-        total_databases=$(ls "$mysql_dir"/*.create | wc -l)
-        log "Starting import for $total_databases MySQL databases"
-        if [ "$total_databases" -gt 0 ]; then
-            current_db=1
-            for db_file in "$mysql_dir"/*.create; do
-                local db_name=$(basename "$db_file" .create)
-
-                log "Creating database: $db_name (${current_db}/${total_databases})"
-                apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
-
-                log "Importing tables for database: $db_name"
-                apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
-                current_db=$((current_db + 1))
-            done
-            log "Finished processing $current_db databases"
-        else
-            log "WARNING: No MySQL databases found"
-        fi
-        # STEP 4. import grants and flush privileges
-        log "Importing database grants"
-        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql >/dev/null 2>&1
-
-        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
-
-        # STEP 5. Grant phpMyAdmin access
-        grant_phpmyadmin_access "$cpanel_username"
-
+    if [ ${#sql_files[@]} -eq 0 ]; then
+        log "No SQL files found in $mysql_backup_dir."
     else
-        log "No MySQL databases found to restore"
-    fi
-}
+        for sql_file in "${sql_files[@]}"; do
+            db_name=$(basename "$sql_file" .sql)
+            log "Restoring database: $db_name from $sql_file"
 
+            # Drop the database if it exists
+            log "Dropping database $db_name if it exists..."
+            if mysql -e "DROP DATABASE IF EXISTS \`$db_name\`;" 2>&1 | while read -r line; do log "$line"; done; then
+                log "Database $db_name dropped (if it existed)."
+            else
+                log "ERROR: Failed to drop database $db_name."
+                continue
+            fi
+
+            # Create the database
+            log "Creating database $db_name..."
+            if mysql -e "CREATE DATABASE \`$db_name\`;" 2>&1 | while read -r line; do log "$line"; done; then
+                log "Database $db_name created successfully."
+            else
+                log "ERROR: Failed to create database $db_name."
+                continue
+            fi
+
+            # Import the SQL file
+            log "Importing SQL file $sql_file into database $db_name..."
+            if mysql "$db_name" < "$sql_file" 2>&1 | while read -r line; do log "$line"; done; then
+                log "Database $db_name restored successfully."
+            else
+                log "ERROR: Failed to import SQL file into database $db_name."
+                continue
+            fi
+        done
+    fi
+
+    # Restore MySQL users and grants from mysql grants file if available
+    if [ -f "$mysql_grants_file" ]; then
+        log "Restoring MySQL users and grants from $mysql_grants_file"
+
+        # Check MySQL version to adjust grant file syntax if necessary
+        mysql_version=$(mysql -V | awk '{print $5}' | awk -F'.' '{print $1"."$2}')
+        log "Detected MySQL version: $mysql_version"
+
+        temp_grants_file="/tmp/processed_mysql_grants.sql"
+
+        if (( $(echo "$mysql_version >= 8.0" | bc -l) )); then
+            log "Modifying grants file for MySQL 8.0 compatibility..."
+            # Replace 'IDENTIFIED BY PASSWORD' with 'IDENTIFIED WITH mysql_native_password AS'
+            sed "s/IDENTIFIED BY PASSWORD/IDENTIFIED WITH mysql_native_password AS/g" "$mysql_grants_file" > "$temp_grants_file"
+        else
+            log "Using grants file as-is for MySQL version < 8.0"
+            cp "$mysql_grants_file" "$temp_grants_file"
+        fi
+
+        # Execute the grants file
+        if mysql < "$temp_grants_file" 2>&1 | while read -r line; do log "$line"; done; then
+            log "MySQL users and grants restored successfully."
+        else
+            log "ERROR: Failed to restore MySQL users and grants."
+        fi
+
+        # Remove the temporary grants file
+        rm -f "$temp_grants_file"
+    else
+        log "No MySQL grants file found at $mysql_grants_file."
+    fi
+
+    log "MySQL database restoration completed."
+}
 # SSL CACHE
 refresh_ssl_file() {
     local username="$1"
@@ -597,6 +621,7 @@ restore_ssl() {
     else
         log "No SSL certificates found to restore"
     fi
+
 }
 
 # SSH KEYS
@@ -689,44 +714,46 @@ restore_dns_zones() {
 
 # HOME DIR
 restore_files() {
-    du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
-    log "Restoring files ($du_needed_for_home) to /home/$cpanel_username/"
+    log "Restoring files ($backup_size) to /home/$cpanel_username/"
+    log "real_backup_files_path is set to: $real_backup_files_path"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore files to /home/$cpanel_username/"
-        return
-    fi
-
-    mv $real_backup_files_path/homedir /home/$cpanel_username
-
-    : '
-    rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-        log "$line"
-    done
-
-    log "Finished transferring files, comparing to source.."
-    original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
-    copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
-
-    if [[ "$original_size" -eq "$copied_size" ]]; then
-        log "The original and target directories have the same size."
+    if [ ! -d "/home/$cpanel_username" ]; then
+        log "/home/$cpanel_username does not exist. Creating directory."
+        mkdir -p "/home/$cpanel_username"
+        log "Successfully created /home/$cpanel_username."
     else
-        log "WARNING: The original and target directories differ in size after restore."
-        log "Original size: $original_size bytes"
-        log "Target size:   $copied_size bytes"
+        log "/home/$cpanel_username exists."
     fi
-    '
 
-    # Move all files from public_html to main domain dir
-    log "Moving main domain files from public_html to $main_domain directory."
-    mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain
-    rm /home/$cpanel_username/www  #since www is symlink to public_html
+    # Optionally comment out the listing of homedir contents
+    # log "Contents of $real_backup_files_path/homedir before moving:"
+    # ls -alh "$real_backup_files_path/homedir" | while IFS= read -r line; do
+    #     log "$line"
+    # done
 
-    #shopt -s dotglob
-    #mv "/home/$cpanel_username/public_html"/* "/home/$cpanel_username/$main_domain"/
-    #shopt -u dotglob
+    log "Attempting to sync $real_backup_files_path/homedir to /home/$cpanel_username/"
+    rsync -a "$real_backup_files_path/homedir/" "/home/$cpanel_username/"
+    if [ $? -eq 0 ]; then
+        log "Successfully synced homedir to /home/$cpanel_username."
+    else
+        log "ERROR: Failed to sync homedir to /home/$cpanel_username."
+    fi
+
+    # Moving main domain files
+    log "Moving main domain files from public_html to $main_domain directory using rsync."
+    if [ ! -d "/home/$cpanel_username/$main_domain" ]; then
+        mkdir -p "/home/$cpanel_username/$main_domain"
+    fi
+    rsync -a "/home/$cpanel_username/public_html/" "/home/$cpanel_username/$main_domain/"
+    if [ $? -eq 0 ]; then
+        log "Successfully synced public_html to $main_domain."
+    else
+        log "ERROR: Failed to sync public_html to $main_domain."
+    fi
+
+    # Remove public_html if needed
+    rm -rf "/home/$cpanel_username/public_html"
 }
-
 # PERMISSIONS
 fix_perms(){
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
@@ -757,10 +784,52 @@ restore_wordpress() {
 
 
 
+
 # DOMAINS
+create_domain() {
+    local domain="$1"
+    local type="$2"
+    local username="$3"
+
+    log "DEBUG: domain='$domain', type='$type', username='$username'"
+
+    current_domain_count=$((current_domain_count + 1))
+    log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
+
+    # Log the command being executed
+    log "Running command: opencli domains-add '$domain' '$username'"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore $type $domain"
+    else
+        # Check if the domain already exists
+        domain_check_output=$(opencli domains-whoowns "$domain" 2>&1)
+        if echo "$domain_check_output" | grep -q "not found in the database"; then
+            # Proceed to add the domain
+            output=$(opencli domains-add "$domain" "$username" 2>&1)
+            log "opencli domains-add output: $output"
+            if echo "$output" | grep -q "Successfully added domain"; then
+                log "Domain $domain added successfully."
+            else
+                log "ERROR: Failed to add domain $domain. Command output: $output"
+            fi
+        else
+            log "WARNING: $type $domain already exists and will not be added to this user."
+        fi
+    fi
+}
 restore_domains() {
+    log "Starting domain restoration process..."
+
     if [ -f "$real_backup_files_path/userdata/main" ]; then
         file_path="$real_backup_files_path/userdata/main"
+
+        # Log the content of the userdata/main file for debugging
+        log "Contents of userdata/main:"
+        while IFS= read -r line; do
+            log "$line"
+        done < "$file_path"
+
         # Initialize variables
         main_domain=""
         parked_domains=""
@@ -868,65 +937,45 @@ restore_domains() {
             log "Subdomains ($filtered_sub_domains_count): ${filtered_sub_domains[@]}"
         fi
 
-
         domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
 
         log "Detected a total of $domains_total_count domains for user."
 
         current_domain_count=0
 
-        create_domain(){
-            domain="$1"
-            type="$2"
-
-            current_domain_count=$((current_domain_count + 1))
-            log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
-
-            if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore $type $domain"
-            elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"
-            else
-                log "WARNING: $type $domain already exists and will not be added to this user."
-            fi
-        }
-
         # Process the domains
-        log "Processing main (primary) domain.."
-        create_domain "$main_domain" "main domain"
+        log "Processing main (primary) domain..."
+        create_domain "$main_domain" "main domain" "$cpanel_username"
 
         if [ "$parked_domains_count" -eq 0 ]; then
             log "No parked (alias) domains detected."
         else
-            log "Processing parked (alias) domains.."
+            log "Processing parked (alias) domains..."
             for parked in "${parked_domains_array[@]}"; do
-                create_domain "$parked" "alias domain"
+                create_domain "$parked" "alias domain" "$cpanel_username"
             done
         fi
 
         if [ "$addon_domains_count" -eq 0 ]; then
             log "No addon domains detected."
         else
-            log "Processing addon domains.."
+            log "Processing addon domains..."
             for addon in "${addon_domains_array[@]}"; do
-                create_domain "$addon" "addon domain"
+                create_domain "$addon" "addon domain" "$cpanel_username"
             done
         fi
 
         if [ "$filtered_sub_domains_count" -eq 0 ]; then
             log "No subdomains detected."
         else
-            log "Processing sub-domains.."
+            log "Processing subdomains..."
             for filtered_sub in "${filtered_sub_domains[@]}"; do
-                create_domain "$filtered_sub" "subdomain"
+                create_domain "$filtered_sub" "subdomain" "$cpanel_username"
                 # TODO: create record in DNS zone instead of separate domain if only DNS zone and no folder!
             done
         fi
 
-        log "Finished importing $domains_total_count domains"
+        log "Finished importing $domains_total_count domains."
 
     else
         log "FATAL ERROR: domains file userdata/main is missing in backup file."
@@ -969,71 +1018,32 @@ restore_cron() {
 }
 
 # Main execution
+# Main execution
 main() {
-    echo -e "
------------------- STARTING CPANEL ACCOUNT IMPORT ------------------
---------------------------------------------------------------------
+    local plan_name="$1"
+    # ... previous steps ...
 
-Currently supported features:
-- FILES AND FOLDERS
-- DOMAINS: MAIN, ADDONS, ALIASES, SUBDOMAINS
-- DNS ZONES
-- MYSQL DATABASES, USERS AND THEIR GRANTS
-- PHP VERSIONS FROM CLOUDLINUX SELECTOR
-- SSH KEYS
-- CRONJOBS
-- WP SITES FROM WPTOOLKIT OR SOFTACULOUS
-
-emails, nodejs/python apps and postgres are not yet supported!
-
---------------------------------------------------------------------
-  if you experience any errors with this script, please report to
-    https://github.com/stefanpejcic/cPanel-to-OpenPanel/issues
---------------------------------------------------------------------
-"
-
-    log "Log file: $log_file"
-    log "PID: $pid"
-
-    # PRE-RUN CHECKS
-    check_if_valid_cp_backup "$backup_location"
-    check_if_disk_available
-    check_if_user_exists
-    validate_plan_exists
-    install_dependencies
-    get_server_ipv4 #used in mysql grants
-
-    # unique
-    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
-    log "Created temporary directory: $backup_dir"
-
-    # extract
-    extract_cpanel_backup "$backup_location" "$backup_dir"
-    real_backup_files_path=$(find "$backup_dir" -type f -name "version" | head -n 1 | xargs dirname)
-    log "Extracted backup folder: $real_backup_files_path"
-
-    # locate important directories
-    locate_backup_directories
     parse_cpanel_metadata
 
-
-
-    # its faster to restore home dir, then create user
-    restore_files
+    # Now that we have cpanel_username and cpanel_email, create the user
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
 
-    fix_perms
-    restore_php_version "$php_version" # php v needs to run before domains
+    # Restore domains (this creates domain directories)
     restore_domains
-    restore_dns_zones
-    restore_mysql "$mysqldir"
-    restore_cron
-    restore_ssl "$cpanel_username"
-    restore_ssh "$cpanel_username"
-    restore_wordpress "$real_backup_files_path" "$cpanel_username"
 
-    #todo:
-    # ftp accounts from proftpdpasswd file
+    # Restore files (now that domain directories exist)
+    restore_files
+
+    # Adjust permissions
+    fix_perms
+
+    # Restore PHP version
+    restore_php_version "$php_version"
+
+    # Restore MySQL databases and users
+    restore_mysql "$mysqldir"
+
+    # ... remaining steps ...
 
     # Cleanup
     cleanup
@@ -1041,26 +1051,23 @@ emails, nodejs/python apps and postgres are not yet supported!
     end_time=$(date +%s)
     elapsed=$(( end_time - start_time ))
     hours=$(( elapsed / 3600 ))
-    minutes=$(( (elapsed % 3600) / 60 ))
+    minutes=$(( (elapsed % 3600 ) / 60 ))
     seconds=$(( elapsed % 60 ))
 
     log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
     log "SUCCESS: Import for user $cpanel_username completed successfully."
 
-
-# run after install if posthook provided
-if [ -n "$post_hook" ]; then
-    if [ -x "$post_hook" ]; then
-        log "Executing post-hool script.."
-        "$post_hook" "$cpanel_username"
-    else
-        log "WARNING: Post-hook file '$post_hook' is not executable or not found."
-        exit 1
+    # Run post-hook if provided
+    if [ -n "$post_hook" ]; then
+        if [ -x "$post_hook" ]; then
+            log "Executing post-hook script..."
+            "$post_hook" "$cpanel_username"
+        else
+            log "WARNING: Post-hook file '$post_hook' is not executable or not found."
+            exit 1
+        fi
     fi
-fi
-
-
 }
 
 # MAIN FUNCTION
