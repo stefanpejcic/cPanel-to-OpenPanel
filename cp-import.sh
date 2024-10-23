@@ -934,6 +934,10 @@ restore_domains() {
             type="$2"
 
             current_domain_count=$((current_domain_count + 1))
+            if [[ $domain == \*.* ]]; then
+                log "WARNING: Skipping wildcard domain $domain"
+                continue
+            fi
             log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
 
             if [ "$DRY_RUN" = true ]; then
