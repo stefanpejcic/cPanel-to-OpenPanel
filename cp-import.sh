@@ -131,21 +131,21 @@ install_dependencies() {
         log "Updating package manager..."
 
         # Hold kernel packages to prevent upgrades
-        sudo apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
+        apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
 
         # Update package list without upgrading
-        sudo apt-get update -y >/dev/null 2>&1
+        apt-get update -y >/dev/null 2>&1
 
         for cmd in "${!commands[@]}"; do
             if ! command_exists "$cmd"; then
                 log "Installing ${commands[$cmd]}"
                 # Install package without upgrading or installing recommended packages
-                sudo apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
+                apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
             fi
         done
 
         # Unhold kernel packages
-        sudo apt-mark unhold linux-image-generic linux-headers-generic
+        apt-mark unhold linux-image-generic linux-headers-generic >/dev/null 2>&1
 
         log "Dependencies installed successfully."
     else
