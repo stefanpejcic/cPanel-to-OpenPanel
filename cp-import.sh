@@ -264,6 +264,7 @@ check_if_disk_available(){
 extract_cpanel_backup() {
     backup_location="$1"
     backup_dir="$2"
+    backup_dir="${backup_dir%.*}"
     log "Extracting backup from $backup_location to $backup_dir"
     mkdir -p "$backup_dir"
 
@@ -280,15 +281,6 @@ extract_cpanel_backup() {
         cleanup
         exit 1
     fi
-
-    # Handle nested archives (common in some cPanel backups)
-    for nested_archive in "$backup_dir"/*.tar.gz "$backup_dir"/*.tgz; do
-        if [ -f "$nested_archive" ]; then
-            log "Found nested archive: $nested_archive"
-            tar -xzf "$nested_archive" -C "$backup_dir"
-            rm "$nested_archive"
-        fi
-    done
 }
 
 # LOCATE FILES IN EXTRACTED BACKUP
@@ -1076,13 +1068,14 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
 
     # folder name used for paths
     backup_filename="${backup_filename%.*}"
-    backup_dir=$(mktemp -d /tmp/${backup_filename}_cpanel_import_XXXXXX)
+    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
-
-    # extract
-    extract_cpanel_backup "$backup_location" "$backup_dir"
     
-    real_backup_files_path="${backup_dir}/${backup_filename}"
+    real_backup_files_path="${backup_dir}/${backup_filename%.*}"
+
+    extract_cpanel_backup "$backup_location" "${backup_dir}"
+    
+
     log "Extracted backup folder: $real_backup_files_path"
 
     # locate important directories
