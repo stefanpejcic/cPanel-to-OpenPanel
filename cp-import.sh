@@ -280,7 +280,7 @@ extract_cpanel_backup() {
     fi
 
 
-:'
+: '
 BENCHMARK CP EXTRACT FROM 15GB ARCHIVE .tar.gz
 
 #1 normal untar
