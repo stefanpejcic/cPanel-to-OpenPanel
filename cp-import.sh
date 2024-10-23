@@ -131,7 +131,7 @@ install_dependencies() {
         log "Updating package manager..."
 
         # Hold kernel packages to prevent upgrades
-        sudo apt-mark hold linux-image-generic linux-headers-generic
+        sudo apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
 
         # Update package list without upgrading
         sudo apt-get update -y >/dev/null 2>&1
