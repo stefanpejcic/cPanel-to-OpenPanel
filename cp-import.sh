@@ -940,9 +940,7 @@ restore_domains() {
                 log "DRY RUN: Would restore $type $domain"
             elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
                 output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"
+                log "$output"
             else
                 log "WARNING: $type $domain already exists and will not be added to this user."
             fi
