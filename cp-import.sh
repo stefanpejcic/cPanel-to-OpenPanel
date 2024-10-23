@@ -207,7 +207,7 @@ check_if_valid_cp_backup(){
             ;;
         *.tar.gz)
             log "Identified gzipped tar backup"
-            extraction_command="tar -xzf"
+            extraction_command="tar --use-compress-program=pigz --checkpoint=1000 -xvf"
             EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
             ;;
         *.tgz)
@@ -272,9 +272,6 @@ extract_cpanel_backup() {
     # Extract the backup
     if [ "$extraction_command" = "unzip" ]; then
         $extraction_command "$backup_location" -d "$backup_dir"
-    elif [ "$extraction_command" = "tar -xzf" ]; then
-        pigz -dc "$backup_location" | tar -xf - -C "$backup_dir"
-        # https://www.gnu.org/software/tar/manual/html_node/Blocking-Factor.html
     else
         $extraction_command "$backup_location" -C "$backup_dir"
     fi
@@ -965,18 +962,19 @@ restore_domains() {
             current_domain_count=$((current_domain_count + 1))
             if [[ $domain == \*.* ]]; then
                 log "WARNING: Skipping wildcard domain $domain"
-                continue
-            fi
-            log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
-
-            if [ "$DRY_RUN" = true ]; then
-                log "DRY RUN: Would restore $type $domain"
-            elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-                log "$output"
             else
-                log "WARNING: $type $domain already exists and will not be added to this user."
+                log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
+    
+                if [ "$DRY_RUN" = true ]; then
+                    log "DRY RUN: Would restore $type $domain"
+                elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+                    output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                    log "$output"
+                else
+                    log "WARNING: $type $domain already exists and will not be added to this user."
+                fi
             fi
+
         }
 
         # Process the domains
