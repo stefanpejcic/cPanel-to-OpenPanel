@@ -685,6 +685,8 @@ restore_ssl() {
         return
     fi
 
+
+    # TODO: edit to cove certs/ keys/ 
     log "Restoring SSL certificates for user $username"
     if [ -d "$real_backup_files_path/ssl" ]; then
         for cert_file in "$real_backup_files_path/ssl"/*.crt; do
@@ -863,15 +865,11 @@ restore_wordpress() {
         return
     fi
 
-    log "Restoring WordPress sites from cPanel WPToolkit to OpenPanel SiteManager"
-    if [ -d "$real_backup_files_path/wptoolkit" ]; then
-        for wp_file in "$real_backup_files_path/wptoolkit"/*.json; do
-            log "Importing WordPress site from: $wp_file"
-            opencli wp-import "$username" "$wp_file"
-        done
-    else
-        log "No WordPress data found to restore"
-    fi
+    log "Checking user files for WordPress installations to add to Site Manager interface.."
+    output=$(opencli websites-scan $cpanel_username)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"    
 }
 
 
