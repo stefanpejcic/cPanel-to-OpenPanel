@@ -6,6 +6,10 @@ start_time=$(date +%s) #used to calculate elapsed time at the end
 
 set -eo pipefail
 
+DEBUG=true
+
+
+
 ###############################################################
 # HELPER FUNCTIONS
 
@@ -16,19 +20,21 @@ usage() {
     exit 1
 }
 
+
 log() {
     local message="$1"
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] $message" | tee -a "$log_file"
 }
 
-DEBUG=true  # Set this to true to enable debug logging
 
 debug_log() {
     if [ "$DEBUG" = true ]; then
         log "DEBUG: $1"
     fi
 }
+
+
 handle_error() {
     log "FATAL ERROR: An error occurred in function '$1' on line $2"
     cleanup
@@ -37,10 +43,14 @@ handle_error() {
 
 trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
 
+
 cleanup() {
     log "Cleaning up temporary files and directories"
     rm -rf "$backup_dir"
 }
+
+
+
 
 define_data_and_log(){
     local backup_location=""
@@ -84,9 +94,13 @@ define_data_and_log(){
     main
 }
 
+
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
+
+
 
 install_dependencies() {
     log "Checking and installing dependencies..."
@@ -138,6 +152,9 @@ install_dependencies() {
         log "All required dependencies are already installed."
     fi
 }
+
+
+
 get_server_ipv4(){
     # Get server ipv4 from ip.openpanel.co or ifconfig.me
     new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
@@ -148,12 +165,20 @@ get_server_ipv4(){
     fi
 }
 
+
+
 validate_plan_exists(){
     if ! opencli plan-list --json | grep -qw "$plan_name"; then
         log "FATAL ERROR: Plan name '$plan_name' does not exist."
         exit 1
     fi
 }
+
+
+
+
+
+
 
 ###############################################################
 # MAIN FUNCTIONS
@@ -261,7 +286,7 @@ extract_cpanel_backup() {
         if [ -f "$nested_archive" ]; then
             log "Found nested archive: $nested_archive"
             tar -xzf "$nested_archive" -C "$backup_dir"
-            rm "$nested_archive"  # Remove the nested archive after extraction
+            rm "$nested_archive"
         fi
     done
 }
@@ -303,6 +328,8 @@ locate_backup_directories() {
     log "cPanel configuration: $cp_file"
 }
 
+
+
 # CPANEL BACKUP METADATA
 parse_cpanel_metadata() {
     log "Starting to parse cPanel metadata..."
@@ -316,7 +343,7 @@ parse_cpanel_metadata() {
         cpanel_email=""
         php_version="inherit"
     else
-        # Function to get value from cp file with default
+
         get_cp_value() {
             local key="$1"
             local default="$2"
@@ -374,6 +401,8 @@ parse_cpanel_metadata() {
     log "Finished parsing cPanel metadata."
 }
 
+
+
 # CHECK BEFORE EXPORT
 check_if_user_exists(){
     backup_filename=$(basename "$backup_location")
@@ -392,6 +421,8 @@ check_if_user_exists(){
         exit 1
     fi
 }
+
+
 
 # CREATE NEW USER
 create_new_user() {
@@ -416,6 +447,8 @@ create_new_user() {
         exit 1
     fi
 }
+
+
 
 # PHP VERSION
 restore_php_version() {
@@ -454,6 +487,8 @@ restore_php_version() {
     fi
 }
 
+
+
 # PHPMYADMIN
 grant_phpmyadmin_access() {
     local username="$1"
@@ -472,6 +507,8 @@ grant_phpmyadmin_access() {
     log "Access granted to phpMyAdmin user for all databases of $username"
 
 }
+
+
 
 # MYSQL
 restore_mysql() {
@@ -556,6 +593,8 @@ restore_mysql() {
     fi
 }
 
+
+
 # SSL CACHE
 refresh_ssl_file() {
     local username="$1"
@@ -569,6 +608,9 @@ refresh_ssl_file() {
     opencli ssl-user "$cpanel_username"
 
 }
+
+
+
 
 # SSL CERTIFICATES
 restore_ssl() {
@@ -599,6 +641,9 @@ restore_ssl() {
     fi
 }
 
+
+
+
 # SSH KEYS
 restore_ssh() {
     local username="$1"
@@ -619,6 +664,9 @@ restore_ssh() {
         fi
     fi
 }
+
+
+
 
 # DNS ZONES
 restore_dns_zones() {
@@ -687,6 +735,8 @@ restore_dns_zones() {
     fi
 }
 
+
+
 # HOME DIR
 restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
@@ -727,11 +777,15 @@ restore_files() {
     #shopt -u dotglob
 }
 
+
+
 # PERMISSIONS
 fix_perms(){
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
+
+
 
 
 # WORDPRESS SITES
@@ -754,6 +808,8 @@ restore_wordpress() {
         log "No WordPress data found to restore"
     fi
 }
+
+
 
 
 
@@ -934,6 +990,9 @@ restore_domains() {
     fi
 }
 
+
+
+
 # CRONJOB
 restore_cron() {
     log "Restoring cron jobs for user $cpanel_username"
@@ -968,6 +1027,10 @@ restore_cron() {
     fi
 }
 
+
+
+
+
 # Main execution
 main() {
     echo -e "
@@ -984,7 +1047,7 @@ Currently supported features:
 - CRONJOBS
 - WP SITES FROM WPTOOLKIT OR SOFTACULOUS
 
-emails, nodejs/python apps and postgres are not yet supported!
+email and ftp accounts, nodejs/python apps and postgres are not yet supported!
 
 --------------------------------------------------------------------
   if you experience any errors with this script, please report to
@@ -1018,10 +1081,8 @@ emails, nodejs/python apps and postgres are not yet supported!
 
 
 
-    # its faster to restore home dir, then create user
-    restore_files
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
-
+    restore_files
     fix_perms
     restore_php_version "$php_version" # php v needs to run before domains
     restore_domains
