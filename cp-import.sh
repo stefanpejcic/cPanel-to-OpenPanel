@@ -114,6 +114,7 @@ install_dependencies() {
         ["rsync"]="rsync"
         ["unzip"]="unzip"
         ["jq"]="jq"
+        ["pigz"]="pigz"
         ["mysql"]="mysql-client"
         ["wget"]="wget"
         ["curl"]="curl"
@@ -271,9 +272,37 @@ extract_cpanel_backup() {
     # Extract the backup
     if [ "$extraction_command" = "unzip" ]; then
         $extraction_command "$backup_location" -d "$backup_dir"
+    elif [ "$extraction_command" = "tar -xzf" ]; then
+        pigz -dc "$backup_location" | tar -xf - -C "$backup_dir"
+        # https://www.gnu.org/software/tar/manual/html_node/Blocking-Factor.html
     else
         $extraction_command "$backup_location" -C "$backup_dir"
     fi
+
+
+:'
+BENCHMARK CP EXTRACT FROM 15GB ARCHIVE .tar.gz
+
+#1 normal untar
+root@stefan:/tmp/cpanel_import_M7Ihu7/backup-10.23.2024_14-49-42_pejcic# time tar -xzf /home/backup-10.23.2024_14-49-42_pejcic.tar.gz -C /tmp/OBICAN
+real	3m15.686s
+
+
+#2 untar with pigz
+root@stefan:/home/cPanel-to-OpenPanel# time pigz -dc /home/backup-10.23.2024_14-49-42_pejcic.tar.gz | tar -xf - -C /tmp/PIGZ                
+real	1m42.612s
+
+
+#3 untar with pigz and bigger blocking factor
+root@stefan:/tmp/cpanel_import_M7Ihu7/backup-10.23.2024_14-49-42_pejcic# time pigz -dc /home/backup-10.23.2024_14-49-42_pejcic.tar.gz | tar --blocking-factor=512 -xf - -C /tmp/PGZNEW
+real	1m59.335s
+
+
+Im leaving pigz for now, --blocking-factor=512 makes sence only for 100GB+ archives, that should be added in the future
+'
+
+
+    
     if [ $? -eq 0 ]; then
         log "Backup extracted successfully."
     else
