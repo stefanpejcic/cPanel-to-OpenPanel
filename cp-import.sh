@@ -833,12 +833,8 @@ restore_files() {
 
     # Move all files from public_html to main domain dir
     log "Moving main domain files from public_html to $main_domain directory."
-    mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain
-    rm /home/$cpanel_username/www  #since www is symlink to public_html
-
-    #shopt -s dotglob
-    #mv "/home/$cpanel_username/public_html"/* "/home/$cpanel_username/$main_domain"/
-    #shopt -u dotglob
+    mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain # openpanel has no concept of 'primary' domain
+    rm /home/$cpanel_username/www                                             # since www is just a symlink to public_html
 }
 
 
