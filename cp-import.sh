@@ -322,9 +322,9 @@ locate_backup_directories() {
     fi
 
     log "Backup directories located successfully"
-    log "Home directory: $homedir"
-    log "MySQL directory: $mysqldir"
-    log "MySQL grants: $mysql_conf"
+    log "Home directory:       $homedir"
+    log "MySQL directory:      $mysqldir"
+    log "MySQL grants:         $mysql_conf"
     log "cPanel configuration: $cp_file"
 }
 
@@ -1074,13 +1074,16 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
     install_dependencies
     get_server_ipv4 #used in mysql grants
 
-    # unique
-    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
+    # folder name used for paths
+    backup_filename=$(basename "$backup_location" .extension)
+    
+    backup_dir=$(mktemp -d /tmp/${backup_filename}_cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
 
     # extract
     extract_cpanel_backup "$backup_location" "$backup_dir"
-    real_backup_files_path=$(find "$backup_dir" -type f -name "version" | head -n 1 | xargs dirname)
+    
+    real_backup_files_path="${backup_dir}/${backup_filename}"
     log "Extracted backup folder: $real_backup_files_path"
 
     # locate important directories
@@ -1088,9 +1091,8 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
     parse_cpanel_metadata
 
 
-
-    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     restore_files
+    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
     fix_perms
     restore_php_version "$php_version" # php v needs to run before domains
     restore_domains
