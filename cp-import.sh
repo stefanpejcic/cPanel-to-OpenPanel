@@ -783,6 +783,10 @@ restore_files() {
 # PERMISSIONS
 fix_perms(){
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
+    if [ "$DRY_RUN" = true ]; then
+        log 'DRY RUN: Would change permissions with command: docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"'
+        return
+    fi
     docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
 }
 
