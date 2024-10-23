@@ -1112,7 +1112,12 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
 
     log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
-    log "SUCCESS: Import for user $cpanel_username completed successfully."
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: import process for user $cpanel_username completed."
+    else
+        log "SUCCESS: Import for user $cpanel_username completed successfully."
+    fi
+
 
 
 # run after install if posthook provided
