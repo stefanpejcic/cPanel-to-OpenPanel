@@ -1075,8 +1075,8 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
     get_server_ipv4 #used in mysql grants
 
     # folder name used for paths
-    backup_filename=$(basename "$backup_location" .extension)
-    
+    backup_filename=$(basename "$backup_location" | rev | cut -d. -f2- | rev)
+        
     backup_dir=$(mktemp -d /tmp/${backup_filename}_cpanel_import_XXXXXX)
     log "Created temporary directory: $backup_dir"
 
