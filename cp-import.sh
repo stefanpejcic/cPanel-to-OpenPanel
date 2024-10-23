@@ -365,17 +365,18 @@ locate_backup_directories() {
         exit 1
     fi
 
-    mysqldir=$(find "$backup_dir" -type d -name "mysql" | head -n 1)
+
+    mysqldir="$real_backup_files_path/mysql"
     if [ -z "$mysqldir" ]; then
         log "WARNING: Unable to locate MySQL directory in the backup"
     fi
 
-    mysql_conf=$(find "$backup_dir" -type f -name "mysql.sql" | head -n 1)
+    mysql_conf="$real_backup_files_path/mysql.sql"
     if [ -z "$mysql_conf" ]; then
         log "WARNING: Unable to locate MySQL grants file in the backup"
     fi
 
-    cp_file=$(find "$backup_dir" -type f -path "*/cp/*" -name "$cpanel_username" | head -n 1)
+    cp_file="$real_backup_files_path/cp/$cpanel_username"
     if [ -z "$cp_file" ]; then
         log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
         exit 1
@@ -808,7 +809,7 @@ restore_files() {
     fi
 
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
-    log "Restoring files ($du_needed_for_home) to /home/$cpanel_username/"
+    log "Restoring home directory ($du_needed_for_home) to /home/$cpanel_username/"
 
     mv $real_backup_files_path/homedir /home/$cpanel_username
 
@@ -862,7 +863,7 @@ restore_wordpress() {
         return
     fi
 
-    log "Restoring WordPress sites for user $username"
+    log "Restoring WordPress sites from cPanel WPToolkit to OpenPanel SiteManager"
     if [ -d "$real_backup_files_path/wptoolkit" ]; then
         for wp_file in "$real_backup_files_path/wptoolkit"/*.json; do
             log "Importing WordPress site from: $wp_file"
