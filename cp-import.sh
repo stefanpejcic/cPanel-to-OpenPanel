@@ -327,7 +327,6 @@ parse_cpanel_metadata() {
     log "Starting to parse cPanel metadata..."
 
     cp_file="${real_backup_files_path}/cp/${cpanel_username}"
-    debug_log "Attempting to parse metadata from file: $cp_file"
 
     if [ ! -f "$cp_file" ]; then
         log "WARNING: cp file $cp_file not found. Using default values."
@@ -372,13 +371,13 @@ parse_cpanel_metadata() {
         max_sub=$(get_cp_value "MAXSUB" "unlimited")
 
         log "Additional metadata parsed:"
-        log "IP Address: $ip_address"
-        log "Plan: $plan"
-        log "Max Addon Domains: $max_addon"
-        log "Max FTP Accounts: $max_ftp"
-        log "Max SQL Databases: $max_sql"
-        log "Max Email Accounts: $max_pop"
-        log "Max Subdomains: $max_sub"
+        log "IP Address:           $ip_address"
+        log "Plan:                 $plan"
+        log "Max Addon Domains:    $max_addon"
+        log "Max FTP Accounts:     $max_ftp"
+        log "Max SQL Databases:    $max_sql"
+        log "Max Email Accounts:   $max_pop"
+        log "Max Subdomains:       $max_sub"
     fi
 
     # Ensure we have at least an empty string for each variable
@@ -386,10 +385,9 @@ parse_cpanel_metadata() {
     cpanel_email="${cpanel_email:-}"
     php_version="${php_version:-inherit}"
 
-    log "cPanel metadata parsed:"
-    log "Main Domain: ${main_domain:-Not found}"
-    log "Email: ${cpanel_email:-Not found}"
-    log "PHP Version: $php_version"
+    log "Main Domain:          ${main_domain:-Not found}"
+    log "Email:                ${cpanel_email:-Not found}"
+    log "PHP Version:          $php_version"
     log "Finished parsing cPanel metadata."
 }
 
@@ -905,7 +903,7 @@ restore_domains() {
             addon_domains_count=0
             log "No addon domains detected."
         else
-            log "Addon domains ($addon_domains_count): ${addon_domains_array[@]}"
+            log "Addon domains  ($addon_domains_count): ${addon_domains_array[@]}"
         fi
 
         parked_domains_count=${#parked_domains_array[@]}
@@ -921,7 +919,7 @@ restore_domains() {
             filtered_sub_domains_count=0
             log "No subdomains detected."
         else
-            log "Subdomains ($filtered_sub_domains_count): ${filtered_sub_domains[@]}"
+            log "Subdomains     ($filtered_sub_domains_count): ${filtered_sub_domains[@]}"
         fi
 
 
