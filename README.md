@@ -36,7 +36,7 @@ Currently suported for import:
 
 ## Usage
 
-1. Run the script with sudo privileges:
+Run the script with sudo privileges:
 
 ```
 git clone https://github.com/stefanpejcic/cPanel-to-OpenPanel
@@ -51,6 +51,7 @@ bash cPanel-to-OpenPanel/cp-import.sh --backup-location /path/to/cpanel_backup.f
 - `--backup-location`: Path to the cPanel backup file (required)
 - `--plan-name`:       Name of the hosting plan in OpenPanel (required)
 - `--dry-run`:         extract archive and display data without actually importing account (optional)
+
 ## Important Notes
 
 - This script should be run on the OpenPanel server where you want to import the cPanel backup.
