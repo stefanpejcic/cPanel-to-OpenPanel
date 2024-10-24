@@ -347,17 +347,32 @@ locate_backup_directories() {
         log "WARNING: Unable to locate MySQL grants file in the backup"
     fi
 
+
+    ftp_conf="$real_backup_files_path/proftpdpassword"
+    if [ -z "$ftp_conf" ]; then
+        log "WARNING: Unable to locate ProFTPD users file file in the backup"
+    fi
+
+    domain_logs="$real_backup_files_path/logs/"
+    if [ -z "$domain_logs" ]; then
+        log "WARNING: Unable to locate apache domlogs in the backup"
+    fi
+
+
+    
     cp_file="$real_backup_files_path/cp/$cpanel_username"
     if [ -z "$cp_file" ]; then
         log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
         exit 1
     fi
 
-    log "Backup directories located successfully"
-    log "Home directory:       $homedir"
-    log "MySQL directory:      $mysqldir"
-    log "MySQL grants:         $mysql_conf"
-    log "cPanel configuration: $cp_file"
+    log "Backup directories and configuration files located successfully"
+    log "- Home directory:       $homedir"
+    log "- MySQL directory:      $mysqldir"
+    log "- MySQL grants:         $mysql_conf"
+    log "- PureFTPD users:       $ftp_conf"
+    log "- Domain logs:          $domain_logs"
+    log "- cPanel configuration: $cp_file"
 }
 
 
@@ -1183,6 +1198,64 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
 
 
 
+ftp_accounts_import() {
+
+    if [ -f "$ftp_conf" ]; then
+        log "WARNING: Importing PureFTPD accounts is not yet supported"
+        : '
+        #cat proftpdpasswd
+        pejcic:$6$cv9wnxSLeD1VEk.U$dm84PcqygxOWqT/uyMjrICKUPFeAQwOimJ8frihDCxjRfa1BKf6bnHIhWrbfmLrLn2YBSMnNatW09ZZMAS7GT/:1030:1034:pejcic:/home/pejcic:/bin/bash
+        neko@pcx3.com:$6$7GZJXVYlO53hV.M7$750UVg6zKmX.Uj8cmWUxkRnNXxjuZfcm6BxnJceiFD5Zl80sB7jZL0UeHIpw2a3aQRWh.BMH9WuCPdqwj8zxG.:1030:1034:pejcic:/home/pejcic/folder:/bin/ftpsh
+        whmcsmybekap@openpanel.co:$6$rDNAW7GZEAJ6zHJm$wYqg.H6USldSPCNz4jbgEi55tJ8hgeDzQCAmhSHfAPyzkJeP1u9E.LaLflQ.7kUbuRtBED7I70.QoCNRlxzEy0:1030:1034:pejcic:/home/pejcic/WHMC_MY_OPENPANEL_DB_BEKAP:/bin/ftpsh
+        pejcic_logs:$6$cv9wnxSLeD1VEk.U$dm84PcqygxOWqT/uyMjrICKUPFeAQwOimJ8frihDCxjRfa1BKf6bnHIhWrbfmLrLn2YBSMnNatW09ZZMAS7GT/:1030:1034:pejcic:/etc/apache2/logs/domlogs/pejcic:/bin/ftpsh
+        '
+    fi
+}
+
+
+
+
+import_domlogs() {
+
+    import_domlogs_for_domain() {
+        local ssl_log_file="$1"
+        local domain="$2"
+        local destination_file="/etc/nginx/domlogs/${domain}.log"
+    
+        # Check if the source file exists
+        if [[ -e "$ssl_log_file" ]]; then
+            # Move the file to the destination
+            mv "$ssl_log_file" "$destination_file"
+            log "Imported logs from file $ssl_log_file to $destination_file"
+        else
+            log "WARNING: Error importing ssl logs from file: $ssl_log_file"
+        fi
+    }
+    
+    if [[ -d "$domain_logs" ]]; then
+        ALL_DOMAINS_OWNED_BY_USER=$(opencli domains-user "$cpanel_username")
+        for domain in $ALL_DOMAINS_OWNED_BY_USER; do
+            ssl_log_file="$domain_logs/$domain-ssl_log"
+            if [[ -e "$ssl_log_file" ]]; then
+                log  "Importing SSL logs for domain $domain from file: $ssl_log_file"
+                import_domlogs_for_domain "$ssl_log_file" "$domain"
+            else
+                log "SSL logs not available for domain $domain - Skipping"
+            fi
+        done
+    else
+        log "WARNING: SSL logs not detected for domains and will not be imported."
+    fi
+}
+
+
+
+
+
+
+import_email_accounts_and_data() {
+        log "WARNING: Importing Email accounts is not yet supported"
+}
 
 
 
@@ -1216,6 +1289,7 @@ main() {
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
+    import_domlogs                                                             # import ssl logs for domains
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
@@ -1224,13 +1298,17 @@ main() {
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     # TODO: ftp accounts from proftpdpasswd file
 
-    # STEP 4. DELETE TMP FILES
+    # STEP 4. IMPORT ENTERPRISE FEATURES
+    import_email_accounts_and_data                                             # import emails, filters, forwarders..
+    ftp_accounts_import                                                        # import ftp accounts
+
+    # STEP 5. DELETE TMP FILES
     cleanup                                                                    # delete extracter files after import
 
-    # STEP 5. NOTIFY USER
+    # STEP 6. NOTIFY USER
     success_message                                                            # have a 🍺
 
-    # STEP 6. RUN ANY CUSTOM SCRIPTS
+    # STEP 7. RUN ANY CUSTOM SCRIPTS
     run_custom_post_hook                                                       # any script to run after the import? example: edit dns on cp server, run tests, notify user, etc.
 
 }
