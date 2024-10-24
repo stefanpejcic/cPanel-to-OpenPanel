@@ -1198,6 +1198,7 @@ Currently supported features:
 │   └─ SSH keys
 └─ ACCOUNT
     ├─ Notification preferences
+    ├─ cPanel account creation date
     └─ locale
 
 ***emails, ftp, nodejs/python, postgres are not yet supported***
@@ -1275,23 +1276,48 @@ import_email_accounts_and_data() {
 
 
 
+# timestamp in openadmin/whm
+restore_startdate() {
+    real_backup_files_path="$1"
+    cpanel_username="$2"
+    cp_file_path="$real_backup_files_path/cp/$cpanel_username"
+    STARTDATE=$(grep -oP 'STARTDATE=\K\d+' "$cp_file_path")
+    
+    if [ -n "$STARTDATE" ]; then
+      human_readable_date=$(date -d @"$STARTDATE" +"%Y-%m-%d %H:%M:%S")
+      log "Updating account creation date to reflect cpanel date: $human_readable_date"
+      update_timestamp="UPDATE users SET registered_date = '$human_readable_date' WHERE username = '$cpanel_username';"
+      mysql -e "$update_timestamp"
+    fi
+}
+
 
 # EMAIL NOTIFICATIONS
 restore_notifications() {
     local real_backup_files_path="$1"
-    local username="$2"
-
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore notification preferences from $username"
-        return
-    fi
-
-    log "Checking user files for WordPress installations to add to Site Manager interface.."
-    output=$(opencli websites-scan $cpanel_username)
+    local cpanel_username="$2"
+    notifications_cp_file="$real_backup_files_path/cp/$cpanel_username"
+    notifications_op_file="/etc/openpanel/openpanel/core/users/$cpanel_username/notifications.yaml"
+   
+    if [ -z "$notifications_cp_file" ]; then
+        log "WARNING: Unable to access $notifications_cp_file for notification preferences - Skipping"
+    else
+        if [ "$DRY_RUN" = true ]; then
+            log "DRY RUN: Would restore notification preferences from $notifications_cp_file"
+            check_notifications=$(grep "notify_" $notifications_cp_file)
+            while IFS= read -r line; do
+                log "$line"
+            done <<< "$check_notifications"
+            return
+        fi  
+        grep "notify_" $notifications_cp_file > $notifications_op_file
+        cat_notifications_file=$(cat $notifications_op_file 2>&1)
         while IFS= read -r line; do
             log "$line"
-        done <<< "$output"    
+        done <<< "$cat_notifications_file"
+    fi
 }
+
 
 
 
@@ -1338,6 +1364,7 @@ main() {
     restore_ssh_password "$cpanel_username"                                    # set ssh password same as in backup
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
+    restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
     
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
