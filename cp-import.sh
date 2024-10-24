@@ -344,6 +344,7 @@ Im leaving #4 for now, --blocking-factor=512 makes sence only for 100GB+ archive
     
     if [ $? -eq 0 ]; then
         log "Backup extracted successfully."
+        log "Extracted backup folder: $real_backup_files_path"
     else
         log "FATAL ERROR: Backup extraction failed."
         cleanup
@@ -704,6 +705,40 @@ restore_ssl() {
         refresh_ssl_file "$username"
     else
         log "No SSL certificates found to restore"
+    fi
+}
+
+
+
+
+
+# SSH PASSWORD
+
+# openpanel does not use pam for authentication so we can not se the user password to be same as on cp, but we can set ssh password to remain the same!
+restore_ssh_password() {
+    local username="$1"
+    local shell_file="$real_backup_files_path/shadow"
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would set SSH password for user: $username from: $shell_file"
+        return
+    fi
+
+    if [ -f "$shell_file" ]; then
+        log "Restoring SSH password for user $username"
+        password_hash=$(cat $shell_file)
+        if [ -z "$password_hash" ]; then
+            echo "WARNNG: Failed to retrieve password hash for user from $shell_file file."
+        else
+            scaped_password_hash=$(echo "$password_hash" | sed 's/\$/\\\$/g')
+            docker exec "$username" bash -c "sed -i 's|^$username:[^:]*:|$username:$escaped_password_hash:|' /etc/shadow"
+            if [ $? -eq 0 ]; then
+                echo "Successfully set the password for ssh user $username in contianer to be the same as in cpanel backup file."
+            else
+                echo "Failed to set ssh password for user $username to eb the same as in cpanel backup file."
+            fi
+        fi
+    else
+        echo "WARNNG: Failed to retrieve password shadow for user from $shell_file file."
     fi
 }
 
@@ -1098,9 +1133,59 @@ restore_cron() {
 
 
 
+run_custom_post_hook() {
+    if [ -n "$post_hook" ]; then
+        if [ -x "$post_hook" ]; then
+            log "Executing post-hool script.."
+            "$post_hook" "$cpanel_username"
+        else
+            log "WARNING: Post-hook file '$post_hook' is not executable or not found."
+            exit 1
+        fi
+    fi
+}
 
-# Main execution
-main() {
+
+
+
+
+
+
+create_tmp_dir_and_path() {
+    backup_filename="${backup_filename%.*}"
+    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
+    log "Created temporary directory: $backup_dir"
+    real_backup_files_path="${backup_dir}/${backup_filename%.*}"
+}
+
+
+success_message() {
+    end_time=$(date +%s)
+    elapsed=$(( end_time - start_time ))
+    hours=$(( elapsed / 3600 ))
+    minutes=$(( (elapsed % 3600) / 60 ))
+    seconds=$(( elapsed % 60 ))
+
+    log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: import process for user $cpanel_username completed."
+    else
+        log "SUCCESS: Import for user $cpanel_username completed successfully."
+    fi
+}
+
+
+
+log_paths_are() {
+    log "Log file: $log_file"
+    log "PID: $pid"
+}
+
+
+start_message() {
+
+
     echo -e "
 ------------------ STARTING CPANEL ACCOUNT IMPORT ------------------
 --------------------------------------------------------------------
@@ -1122,80 +1207,61 @@ email and ftp accounts, nodejs/python apps and postgres are not yet supported!
     https://github.com/stefanpejcic/cPanel-to-OpenPanel/issues
 --------------------------------------------------------------------
 "
+}
 
-    log "Log file: $log_file"
-    log "PID: $pid"
 
-    # PRE-RUN CHECKS
-    check_if_valid_cp_backup "$backup_location"
-    check_if_disk_available
-    check_if_user_exists
-    validate_plan_exists
-    install_dependencies
-    get_server_ipv4 #used in mysql grants
 
-    # folder name used for paths
-    backup_filename="${backup_filename%.*}"
-    backup_dir=$(mktemp -d /tmp/cpanel_import_XXXXXX)
-    log "Created temporary directory: $backup_dir"
+
+
+
+
+
+
+
+###################################### MAIN SCRIPT EXECUTION ######################################
+###################################################################################################
+main() {
+
+    start_message                                                              # what will be imported
+    log_paths_are                                                              # where will we store the progress
     
-    real_backup_files_path="${backup_dir}/${backup_filename%.*}"
-
-    extract_cpanel_backup "$backup_location" "${backup_dir}"
+    # STEP 1. PRE-RUN CHECKS
+    check_if_valid_cp_backup "$backup_location"                                # is it?
+    check_if_disk_available                                                    # calculate du needed for extraction
+    check_if_user_exists                                                       # make sure we dont overwrite user!
+    validate_plan_exists                                                       # check if provided plan exists
+    install_dependencies                                                       # install commands we will use for this script
+    get_server_ipv4                                                            # used in mysql grants
     
+    # STEP 2. EXTRACT
+    create_tmp_dir_and_path                                                    # create /tmp/.. dir and set the path
+    extract_cpanel_backup "$backup_location" "${backup_dir}"                   # extract the archive
 
-    log "Extracted backup folder: $real_backup_files_path"
+    # STEP 3. IMPORT
+    locate_backup_directories                                                  # get paths from backup
+    parse_cpanel_metadata                                                      # get data and configurations
+    restore_files                                                              # homedir
+    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
+    fix_perms                                                                  # fix permissions for all files
+    restore_php_version "$php_version"                                         # php v needs to run before domains 
+    restore_domains                                                            # add domains
+    restore_dns_zones                                                          # add dns 
+    restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
+    restore_cron                                                               # cronjob
+    restore_ssl "$cpanel_username"                                             # ssl certs
+    restore_ssh "$cpanel_username"                                             # enable remote ssh for user
+    restore_ssh_password "$cpanel_username"                                    # set ssh password same as in backup
+    restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
+    # TODO: ftp accounts from proftpdpasswd file
 
-    # locate important directories
-    locate_backup_directories
-    parse_cpanel_metadata
+    # STEP 4. DELETE TMP FILES
+    cleanup                                                                    # delete extracter files after import
 
+    # STEP 5. NOTIFY USER
+    success_message                                                            # have a 🍺
 
-    restore_files
-    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"
-    fix_perms
-    restore_php_version "$php_version" # php v needs to run before domains
-    restore_domains
-    restore_dns_zones
-    restore_mysql "$mysqldir"
-    restore_cron
-    restore_ssl "$cpanel_username"
-    restore_ssh "$cpanel_username"
-    restore_wordpress "$real_backup_files_path" "$cpanel_username"
-
-    #todo:
-    # ftp accounts from proftpdpasswd file
-
-    # Cleanup
-    cleanup
-
-    end_time=$(date +%s)
-    elapsed=$(( end_time - start_time ))
-    hours=$(( elapsed / 3600 ))
-    minutes=$(( (elapsed % 3600) / 60 ))
-    seconds=$(( elapsed % 60 ))
-
-    log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
-
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: import process for user $cpanel_username completed."
-    else
-        log "SUCCESS: Import for user $cpanel_username completed successfully."
-    fi
-
-
-
-# run after install if posthook provided
-if [ -n "$post_hook" ]; then
-    if [ -x "$post_hook" ]; then
-        log "Executing post-hool script.."
-        "$post_hook" "$cpanel_username"
-    else
-        log "WARNING: Post-hook file '$post_hook' is not executable or not found."
-        exit 1
-    fi
-fi
-
+    # STEP 6. RUN ANY CUSTOM SCRIPTS
+    run_custom_post_hook                                                       # any script to run after the import? example: edit dns on cp server, run tests, notify user, etc.
 
 }
 
