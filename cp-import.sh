@@ -896,6 +896,7 @@ restore_wordpress() {
 
 
 
+
 # DOMAINS
 restore_domains() {
     if [ -f "$real_backup_files_path/userdata/main" ]; then
@@ -1176,16 +1177,30 @@ start_message() {
 --------------------------------------------------------------------
 
 Currently supported features:
-- FILES AND FOLDERS
-- DOMAINS: MAIN, ADDONS, ALIASES, SUBDOMAINS
-- DNS ZONES
-- MYSQL DATABASES, USERS AND THEIR GRANTS
-- PHP VERSIONS FROM CLOUDLINUX SELECTOR
-- SSH KEYS
-- CRONJOBS
-- WP SITES FROM WPTOOLKIT OR SOFTACULOUS
 
-email and ftp accounts, nodejs/python apps and postgres are not yet supported!
+├─ DOMAINS:
+│  ├─ Primary domain, Addons, Aliases and Subdomains
+│  ├─ SSL certificates
+│  ├─ Domains access logs (Apache domlogs)
+│  └─ DNS zones
+├─ WEBSITES:
+│  └─ WordPress instalations from WPToolkit & Softaculous 
+├─ DATABASES:
+│    ├─ Remote access to MySQL
+│    └─ MySQL databases, users and grants
+├─ PHP:
+│    └─ Installed version from Cloudlinux PHP Selector
+├─ FILES
+├─ CRONS
+├─ SSH
+│   ├─ Remote SSH access
+│   ├─ SSH password
+│   └─ SSH keys
+└─ ACCOUNT
+    ├─ Notification preferences
+    └─ locale
+
+***emails, ftp, nodejs/python, postgres are not yet supported***
 
 --------------------------------------------------------------------
   if you experience any errors with this script, please report to
@@ -1261,6 +1276,32 @@ import_email_accounts_and_data() {
 
 
 
+# EMAIL NOTIFICATIONS
+restore_notifications() {
+    local real_backup_files_path="$1"
+    local username="$2"
+
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would restore notification preferences from $username"
+        return
+    fi
+
+    log "Checking user files for WordPress installations to add to Site Manager interface.."
+    output=$(opencli websites-scan $cpanel_username)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"    
+}
+
+
+
+
+
+
+
+
+
+
 ###################################### MAIN SCRIPT EXECUTION ######################################
 ###################################################################################################
 main() {
@@ -1296,8 +1337,8 @@ main() {
     restore_ssh "$cpanel_username"                                             # enable remote ssh for user
     restore_ssh_password "$cpanel_username"                                    # set ssh password same as in backup
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
-    # TODO: ftp accounts from proftpdpasswd file
-
+    restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
+    
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
     ftp_accounts_import                                                        # import ftp accounts
