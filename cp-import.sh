@@ -677,7 +677,7 @@ restore_ssl() {
             local key_file="$real_backup_files_path/ssl/$domain.key"
             if [ -f "$key_file" ]; then
                 log "Installing SSL certificate for domain: $domain"
-                opencli ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
+                opencli ssl-domain "$domain" --cert "$cert_file" --key "$key_file"
             else
                 log "SSL key file not found for domain: $domain"
             fi
