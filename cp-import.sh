@@ -550,8 +550,7 @@ grant_phpmyadmin_access() {
     # https://github.com/stefanpejcic/OpenPanel/blob/148b5e482f7bde4850868ba5cf85717538770882/docker/apache/phpmyadmin/pma.php#L13C44-L13C54
     phpmyadmin_user="phpmyadmin"
     sql_command="GRANT ALL ON *.* TO 'phpmyadmin'@'localhost'; FLUSH PRIVILEGES;"
-    grant_commands=$(docker exec $username mysql -N -e "$sql_command")
-
+    grant_commands=$(su "$username" -c "docker exec $username mysql -N -e \"$sql_command\"")
     log "Access granted to phpMyAdmin user for all databases of $username"
 
 }
@@ -600,8 +599,8 @@ restore_mysql() {
 
         # STEP 2. start mysql for user
         log "Initializing MySQL service for user"
-        docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
-        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
+        su "$cpanel_username" -c "docker exec $cpanel_username bash -c 'service mysql start >/dev/null 2>&1'"
+        su "$cpanel_username" -c "docker exec $cpanel_username bash -c \"sed -i 's/CRON_STATUS=\\\"off\\\"/CRON_STATUS=\\\"on\\\"/' /etc/entrypoint.sh\""
 
         # STEP 3. create and import databases
         total_databases=$(ls "$mysql_dir"/*.create | wc -l)
@@ -613,13 +612,12 @@ restore_mysql() {
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
-
+                su "$cpanel_username" -c "docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create >/dev/null 2>&1"
+                su "$cpanel_username" -c "docker exec $cpanel_username bash -c 'mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create'"
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+                su "$cpanel_username" -c "docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1"
+                su "$cpanel_username" -c "docker exec $cpanel_username bash -c 'mysql ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql'"
                 current_db=$((current_db + 1))
             done
             log "Finished processing $current_db databases"
@@ -629,9 +627,8 @@ restore_mysql() {
         # STEP 4. import grants and flush privileges
         log "Importing database grants"
         python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql >/dev/null 2>&1
-
-        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        su "$cpanel_username" -c "docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1"
+        su "$cpanel_username" -c "docker exec $cpanel_username bash -c 'mysql < /tmp/mysql.TEMPORARY.sql && mysql -e \"FLUSH PRIVILEGES;\" && rm /tmp/mysql.TEMPORARY.sql'"
 
         # STEP 5. Grant phpMyAdmin access
         grant_phpmyadmin_access "$cpanel_username"
