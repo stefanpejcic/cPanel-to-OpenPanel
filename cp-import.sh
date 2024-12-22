@@ -180,7 +180,7 @@ install_dependencies() {
 
 get_server_ipv4(){
     # Get server ipv4 from ip.openpanel.co or ifconfig.me
-    new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.co || wget --timeout=2 -qO- https://ip.openpanel.co || curl --silent --max-time 2 -4 https://ifconfig.me)
+    new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.com || wget --timeout=2 -qO- https://ip.openpanel.com || curl --silent --max-time 2 -4 https://ifconfig.me)
 
     # if no internet, get the ipv4 from the hostname -I
     if [ -z "$new_ip" ]; then
