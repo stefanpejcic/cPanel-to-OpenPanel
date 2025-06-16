@@ -180,7 +180,6 @@ install_dependencies() {
 
 get_server_ipv4(){
     new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.com || wget --timeout=2 -qO- https://ip.openpanel.com || curl --silent --max-time 2 -4 https://ifconfig.me)
-
     # if no internet, get the ipv4 from the hostname -I
     if [ -z "$new_ip" ]; then
         new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
@@ -325,7 +324,6 @@ extract_cpanel_backup() {
 locate_backup_directories() {
     log "Locating important files in the extracted backup"
 
-    # Try to locate the key directories
     homedir=$(find "$backup_dir" -type d -name "homedir" | head -n 1)
     if [ -z "$homedir" ]; then
         homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
@@ -334,7 +332,6 @@ locate_backup_directories() {
         log "FATAL ERROR: Unable to locate home directory in the backup"
         exit 1
     fi
-
 
     mysqldir="$real_backup_files_path/mysql"
     if [ -z "$mysqldir" ]; then
@@ -346,7 +343,6 @@ locate_backup_directories() {
         log "WARNING: Unable to locate MySQL grants file in the backup"
     fi
 
-
     ftp_conf="$real_backup_files_path/proftpdpassword"
     if [ -z "$ftp_conf" ]; then
         log "WARNING: Unable to locate ProFTPD users file file in the backup"
@@ -357,8 +353,6 @@ locate_backup_directories() {
         log "WARNING: Unable to locate apache domlogs in the backup"
     fi
 
-
-    
     cp_file="$real_backup_files_path/cp/$cpanel_username"
     if [ -z "$cp_file" ]; then
         log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
@@ -502,7 +496,7 @@ restore_php_version() {
     local php_version="$1"
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would check/install PHP version $php_version for user $cpanel_username"
+        log "DRY RUN: Would sed default PHP version $php_version for user $cpanel_username"
         return
     fi
 
@@ -510,27 +504,12 @@ restore_php_version() {
     if [ "$php_version" == "inherit" ]; then
         log "PHP version is set to inherit. No changes will be made."
     else
-        log "Checking if current PHP version installed matches the version from backup"
-        local current_version=$(opencli php-default_version "$cpanel_username" | sed 's/Default PHP version for user.*: //')
-        if [ "$current_version" != "$php_version" ]; then
-            local installed_versions=$(opencli php-installed_versions "$cpanel_username")
-            if ! echo "$installed_versions" | grep -q "$php_version"; then
-                log "Default PHP version $php_version from backup is not present in the container, installing.."
-                output=$(opencli php-install_version "$cpanel_username" "$php_version" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"
-
-                # Set as default PHP version
-                log "Setting newly installed PHP $php_version as the default version for all new domains."
-                output=$(opencli php-default_version "$cpanel_username" --update "$php_version" 2>&1)
-                while IFS= read -r line; do
-                    log "$line"
-                done <<< "$output"
-            fi
-        else
-            log "Default PHP version in backup file ($php_version) matches the installed PHP version: ($current_version)"
-        fi
+        # Set as default PHP version
+        log "Setting PHP $php_version as the default version for all new domains."
+        output=$(opencli php-default "$cpanel_username" --update "$php_version" 2>&1)
+        while IFS= read -r line; do
+            log "$line"
+        done <<< "$output"
     fi
 }
 
