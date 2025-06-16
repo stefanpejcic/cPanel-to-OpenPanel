@@ -596,7 +596,7 @@ restore_mysql() {
         if [ "$total_databases" -gt 0 ]; then
             current_db=1
             for db_file in "$mysql_dir"/*.create; do
-                local db_name=$(basename "$db_file" .create)
+                db_name=$(basename "$db_file" .create)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
