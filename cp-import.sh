@@ -371,7 +371,7 @@ locate_backup_directories() {
 
 
 get_mariadb_or_mysql_for_user() {
-    mysql_type=$(grep '^MYSQL_TYPE=' .env | cut -d '=' -f2 | tr -d '"')
+    mysql_type=$(grep '^MYSQL_TYPE=' /home/$cpanel_username/.env | cut -d '=' -f2 | tr -d '"')
 
     if [[ "$mysql_type" != "mariadb" && "$mysql_type" != "mysql" ]]; then
         echo "Unsupported MYSQL_TYPE: $mysql_type"
