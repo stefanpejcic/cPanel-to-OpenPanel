@@ -779,12 +779,22 @@ restore_files() {
 
 # PERMISSIONS
 fix_perms(){
+    local verbose="" #-v
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
     if [ "$DRY_RUN" = true ]; then
         log "DRY RUN: Would change permissions with command: find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username"
         return
     fi
-    find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username > /dev/null 2>&1
+    
+    if ! timeout 600 find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username > /dev/null 2>&1; then
+        if [ $? -eq 124 ]; then
+            log "ERROR: Timeout reached while changing permissions (10 minutes)."
+        else
+            log "ERROR: Failed to change permissions."
+        fi
+            log "       Make sure to change permissions manually from terminal with: find /home/$cpanel_username -print0 | xargs -0 chown -v $cpanel_username:$cpanel_username"
+    fi
+    
 }
 
 
