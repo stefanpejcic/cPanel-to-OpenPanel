@@ -370,6 +370,17 @@ locate_backup_directories() {
 
 
 
+get_mariadb_or_mysql_for_user() {
+    mysql_type=$(grep '^MYSQL_TYPE=' .env | cut -d '=' -f2 | tr -d '"')
+
+    if [[ "$mysql_type" != "mariadb" && "$mysql_type" != "mysql" ]]; then
+        echo "Unsupported MYSQL_TYPE: $mysql_type"
+        exit 1
+    fi
+
+}
+
+
 # CPANEL BACKUP METADATA
 parse_cpanel_metadata() {
     log "Starting to parse cPanel metadata..."
@@ -575,11 +586,9 @@ restore_mysql() {
         log "Removing old hostname $old_hostname from database grants"
         sed -i "/$old_hostname/d" "$mysql_conf"
 
-
         # STEP 2. start mysql for user
-        log "Initializing MySQL service for user"
-        docker exec $cpanel_username bash -c "service mysql start >/dev/null 2>&1"
-        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh
+        log "Initializing $mysql_type service for user"
+        cd /home/$cpanel_username/ && docker --context=$cpanel_username compose up -d $mysql_type >/dev/null 2>&1"
 
         # STEP 3. create and import databases
         total_databases=$(ls "$mysql_dir"/*.create | wc -l)
@@ -591,13 +600,13 @@ restore_mysql() {
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.create $cpanel_username:/tmp/${db_name}.create  >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+                docker --context=$cpanel_username cp ${real_backup_files_path}/mysql/$db_name.create $mysql_type:/tmp/${db_name}.create  >/dev/null 2>&1
+                docker --context=$cpanel_username exec $mysql_type bash -c "$mysql_type < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
 
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-                docker cp ${real_backup_files_path}/mysql/$db_name.sql $cpanel_username:/tmp/$db_name.sql >/dev/null 2>&1
-                docker exec $cpanel_username bash -c "mysql ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+                docker cp --context=$cpanel_username ${real_backup_files_path}/mysql/$db_name.sql $mysql_type:/tmp/$db_name.sql >/dev/null 2>&1
+                docker --context=$cpanel_username exec $mysql_type bash -c "$mysql_type ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
                 current_db=$((current_db + 1))
             done
             log "Finished processing $current_db databases"
@@ -608,35 +617,16 @@ restore_mysql() {
         log "Importing database grants"
         python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql >/dev/null 2>&1
 
-        docker cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1
-        docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        docker --context=$cpanel_username cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1
+        docker --context=$cpanel_username exec $$mysql_type bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
-        # STEP 5. Grant phpMyAdmin access
+        # STEP 5. Grant root user all access
         grant_root_access "$cpanel_username"
 
     else
         log "No MySQL databases found to restore"
     fi
 }
-
-
-
-# SSL CACHE
-refresh_ssl_file() {
-    local username="$1"
-
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would refresh SSL file for user $username"
-        return
-    fi
-
-    log "Creating a list of SSL certificates for user interface"
-    output=$(opencli ssl-user "$cpanel_username")
-        while IFS= read -r line; do
-            log "$line"
-        done <<< "$output"
-}
-
 
 
 
@@ -656,76 +646,20 @@ restore_ssl() {
         for cert_file in "$real_backup_files_path/ssl"/*.crt; do
             local domain=$(basename "$cert_file" .crt)
             local key_file="$real_backup_files_path/ssl/$domain.key"
+            
+            # todo: move keys to var/www/html first!
+            
             if [ -f "$key_file" ]; then
                 log "Installing SSL certificate for domain: $domain"
-                opencli ssl install --domain "$domain" --cert "$cert_file" --key "$key_file"
+                opencli domains-ssl "$domain" "$cert_file" "$key_file"
             else
                 log "SSL key file not found for domain: $domain"
             fi
         done
 
-        # Refresh the SSL file after restoring certificates
-        refresh_ssl_file "$username"
+        # TODO: reload caddy
     else
         log "No SSL certificates found to restore"
-    fi
-}
-
-
-
-
-
-# SSH PASSWORD
-
-# openpanel does not use pam for authentication so we can not se the user password to be same as on cp, but we can set ssh password to remain the same!
-restore_ssh_password() {
-    local username="$1"
-    local shell_file="$real_backup_files_path/shadow"
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would set SSH password for user: $username from: $shell_file"
-        return
-    fi
-
-    if [ -f "$shell_file" ]; then
-        log "Restoring SSH password for user $username"
-        password_hash=$(cat $shell_file)
-        if [ -z "$password_hash" ]; then
-            echo "WARNNG: Failed to retrieve password hash for user from $shell_file file."
-        else
-            scaped_password_hash=$(echo "$password_hash" | sed 's/\$/\\\$/g')
-            docker exec "$username" bash -c "sed -i 's|^$username:[^:]*:|$username:$escaped_password_hash:|' /etc/shadow"
-            if [ $? -eq 0 ]; then
-                echo "Successfully set the password for ssh user $username in contianer to be the same as in cpanel backup file."
-            else
-                echo "Failed to set ssh password for user $username to eb the same as in cpanel backup file."
-            fi
-        fi
-    else
-        echo "WARNNG: Failed to retrieve password shadow for user from $shell_file file."
-    fi
-}
-
-
-
-
-# SSH KEYS
-restore_ssh() {
-    local username="$1"
-
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore SSH access for user $username"
-        return
-    fi
-
-    log "Restoring SSH access for user $username"
-    local shell_access=$(grep -oP 'shell: \K\S+' "$real_backup_files_path/userdata/main")
-    if [ "$shell_access" == "/bin/bash" ]; then
-        opencli user-ssh enable "$username"
-        if [ -f "$real_backup_files_path/.ssh/id_rsa.pub" ]; then
-            mkdir -p "/home/$username/.ssh"
-            cp "$real_backup_files_path/.ssh/id_rsa.pub" "/home/$username/.ssh/authorized_keys"
-            chown -R "$username:$username" "/home/$username/.ssh"
-        fi
     fi
 }
 
@@ -735,8 +669,6 @@ restore_ssh() {
 # DNS ZONES
 restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
-
-
 
 
             #domain_file="$real_backup_files_path/userdata/$domain"
@@ -832,6 +764,9 @@ restore_files() {
     fi
     '
 
+
+    # TODO: keep as is, update --docroot when adding domains!
+    
     # Move all files from public_html to main domain dir
     log "Moving main domain files from public_html to $main_domain directory."
     mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain # openpanel has no concept of 'primary' domain
@@ -844,10 +779,10 @@ restore_files() {
 fix_perms(){
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
     if [ "$DRY_RUN" = true ]; then
-        log 'DRY RUN: Would change permissions with command: docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"'
+        log "DRY RUN: Would change permissions with command: find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username"
         return
     fi
-    docker exec $cpanel_username bash -c "chown -R 1000:33 /home/$cpanel_username"
+    find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username > /dev/null 2>&1
 }
 
 
@@ -1069,26 +1004,56 @@ restore_cron() {
         return
     fi
 
-    if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
-        # exclude shell and email variables from file!
-        sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
 
-        output=$(docker cp $real_backup_files_path/cron/$cpanel_username $cpanel_username:/var/spool/cron/crontabs/$cpanel_username 2>&1)
-        while IFS= read -r line; do
-            log "$line"
-        done <<< "$output"
+if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
+    # Remove shell and mail settings (first 2 lines)
+    sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
 
-        output=$(docker exec $cpanel_username bash -c "crontab -u $cpanel_username /var/spool/cron/crontabs/$cpanel_username" 2>&1)
-        while IFS= read -r line; do
-            log "$line"
-        done <<< "$output"
+    ofelia_cron_path="/home/${cpanel_username}/crons.ini"
+    > "$ofelia_cron_path"
 
-        output=$(docker exec $cpanel_username bash -c "service cron restart" 2>&1)
-        while IFS= read -r line; do
-            log "$line"
-        done <<< "$output"
+    job_index=1
+    while IFS= read -r cron_line; do
+        # Skip empty lines or comments
+        [[ -z "$cron_line" || "$cron_line" =~ ^# ]] && continue
 
-        docker exec "$cpanel_username" sed -i 's/CRON_STATUS="off"/CRON_STATUS="on"/' /etc/entrypoint.sh  >/dev/null 2>&1
+        # Extract schedule and command
+        schedule=$(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')
+        command=$(echo "$cron_line" | cut -d' ' -f6-)
+
+        if [[ "$command" == *mysql* || "$command" == *mariadb* ]]; then
+            container_name="mysql"
+            comment_prefix=""
+        elif [[ "$command" == *php* ]]; then
+            container_name="$php_version"
+            comment_prefix=""
+        else
+            # Not supported, write commented block
+            container_name=""
+            comment_prefix="# "
+        fi
+
+        {
+            echo "${comment_prefix}[job-exec \"${cpanel_username}_job_$job_index\"]"
+            echo "${comment_prefix}schedule = \"$schedule\""
+            if [[ -n "$container_name" ]]; then
+                echo "${comment_prefix}container = \"$container_name\""
+            fi
+            echo "${comment_prefix}command = \"$command\""
+            echo ""
+        } >> "$ofelia_cron_path"
+
+        ((job_index++))
+    done < "$real_backup_files_path/cron/$cpanel_username"
+
+    log "Converted crontab to Ofelia config at: $ofelia_cron_path"
+    
+    log "Starting Cron service"
+    output=$(cd /home/$cpanel_username && docker --context=$cpanel_username compose up -d cron 2>&1)
+    while IFS= read -r line; do
+        log "$line"
+    done <<< "$output"
+
     else
         log "No cron jobs found to restore"
     fi
@@ -1170,10 +1135,6 @@ Currently supported features:
 │    └─ Installed version from Cloudlinux PHP Selector
 ├─ FILES
 ├─ CRONS
-├─ SSH
-│   ├─ Remote SSH access
-│   ├─ SSH password
-│   └─ SSH keys
 └─ ACCOUNT
     ├─ Notification preferences
     ├─ cPanel account creation date
@@ -1203,42 +1164,6 @@ ftp_accounts_import() {
         whmcsmybekap@openpanel.co:$6$rDNAW7GZEAJ6zHJm$wYqg.H6USldSPCNz4jbgEi55tJ8hgeDzQCAmhSHfAPyzkJeP1u9E.LaLflQ.7kUbuRtBED7I70.QoCNRlxzEy0:1030:1034:pejcic:/home/pejcic/WHMC_MY_OPENPANEL_DB_BEKAP:/bin/ftpsh
         pejcic_logs:$6$cv9wnxSLeD1VEk.U$dm84PcqygxOWqT/uyMjrICKUPFeAQwOimJ8frihDCxjRfa1BKf6bnHIhWrbfmLrLn2YBSMnNatW09ZZMAS7GT/:1030:1034:pejcic:/etc/apache2/logs/domlogs/pejcic:/bin/ftpsh
         '
-    fi
-}
-
-
-
-
-import_domlogs() {
-
-    import_domlogs_for_domain() {
-        local ssl_log_file="$1"
-        local domain="$2"
-        local destination_file="/var/log/nginx/domlogs/${domain}.log"
-    
-        # Check if the source file exists
-        if [[ -e "$ssl_log_file" ]]; then
-            # Move the file to the destination
-            mv "$ssl_log_file" "$destination_file"
-            log "Imported logs from file $ssl_log_file to $destination_file"
-        else
-            log "WARNING: Error importing ssl logs from file: $ssl_log_file"
-        fi
-    }
-    
-    if [[ -d "$domain_logs" ]]; then
-        ALL_DOMAINS_OWNED_BY_USER=$(opencli domains-user "$cpanel_username")
-        for domain in $ALL_DOMAINS_OWNED_BY_USER; do
-            ssl_log_file="$domain_logs/$domain-ssl_log"
-            if [[ -e "$ssl_log_file" ]]; then
-                log  "Importing SSL logs for domain $domain from file: $ssl_log_file"
-                import_domlogs_for_domain "$ssl_log_file" "$domain"
-            else
-                log "SSL logs not available for domain $domain - Skipping"
-            fi
-        done
-    else
-        log "WARNING: SSL logs not detected for domains and will not be imported."
     fi
 }
 
@@ -1330,16 +1255,14 @@ main() {
     parse_cpanel_metadata                                                      # get data and configurations
     restore_files                                                              # homedir
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
+    get_mariadb_or_mysql_for_user                                              # mysql or mariadb
     fix_perms                                                                  # fix permissions for all files
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
-    import_domlogs                                                             # import ssl logs for domains
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
-    restore_ssh "$cpanel_username"                                             # enable remote ssh for user
-    restore_ssh_password "$cpanel_username"                                    # set ssh password same as in backup
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
     restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
