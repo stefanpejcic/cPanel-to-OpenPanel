@@ -516,21 +516,21 @@ restore_php_version() {
 
 
 # PHPMYADMIN
-grant_phpmyadmin_access() {
+grant_root_access() {
     local username="$1"
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would grant phpMyAdmin access to all databases for user $username"
+        log "DRY RUN: Would grant root user access to all databases for user $username"
         return
     fi
 
-    log "Granting phpMyAdmin access to all databases for user $username"
+    log "Granting root access to all databases for user $username"
     # https://github.com/stefanpejcic/OpenPanel/blob/148b5e482f7bde4850868ba5cf85717538770882/docker/apache/phpmyadmin/pma.php#L13C44-L13C54
-    phpmyadmin_user="phpmyadmin"
-    sql_command="GRANT ALL ON *.* TO 'phpmyadmin'@'localhost'; FLUSH PRIVILEGES;"
-    grant_commands=$(docker exec $username mysql -N -e "$sql_command")
+    phpmyadmin_user="root"
+    sql_command="GRANT ALL ON *.* TO 'root'@'localhost'; FLUSH PRIVILEGES;"
+    grant_commands=$(docker --context=$username exec mysql mysql -N -e "$sql_command")
 
-    log "Access granted to phpMyAdmin user for all databases of $username"
+    log "Access granted to root user for all databases of $username"
 
 }
 
@@ -612,7 +612,7 @@ restore_mysql() {
         docker exec $cpanel_username bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
         # STEP 5. Grant phpMyAdmin access
-        grant_phpmyadmin_access "$cpanel_username"
+        grant_root_access "$cpanel_username"
 
     else
         log "No MySQL databases found to restore"
