@@ -546,7 +546,6 @@ grant_root_access() {
 }
 
 
-
 # MYSQL
 restore_mysql() {
     local mysql_dir="$1"
@@ -559,39 +558,39 @@ restore_mysql() {
         return
     fi
 
-    #https://jira.mariadb.org/browse/MDEV-34183
+    # Workaround for MariaDB sandbox mode bug
     apply_sandbox_workaround() {
         local db_file="$1"
-        text_to_check='enable the sandbox mode'
+        local text_to_check='enable the sandbox mode'
         local first_line
 
-        first_line=$(head -n 1 ${real_backup_files_path}/mysql/$db_file)
+        first_line=$(head -n 1 "${real_backup_files_path}/mysql/$db_file")
         if echo "$first_line" | grep -q "$text_to_check"; then
             if [ "$sandbox_warning_logged" = false ]; then
                 log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
                 sandbox_warning_logged=true
             fi
-            # Remove the first line and save the changes to the same file
-            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
+            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && \
+            mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
         fi
     }
 
     if [ -d "$mysql_dir" ]; then
-        # STEP 1. get old server ip and replace it in the mysql.sql file that has import permissions
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
+        # STEP 1: Replace old IP and hostname
+        old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
         log "Replacing old server IP: $old_ip with '%' in database grants"
-        sed -i "s/$old_ip/%/g" $mysql_conf
+        sed -i "s/$old_ip/%/g" "$mysql_conf"
 
-        old_hostname=$(cat ${real_backup_files_path}/meta/hostname)
+        old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
         log "Removing old hostname $old_hostname from database grants"
         sed -i "/$old_hostname/d" "$mysql_conf"
 
-        # STEP 2. start mysql for user
+        # STEP 2: Start MySQL container
         log "Initializing $mysql_type service for user"
-        cd /home/$cpanel_username/ && docker --context=$cpanel_username compose up -d $mysql_type >/dev/null 2>&1"
+        cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
-        # STEP 3. create and import databases
-        total_databases=$(ls "$mysql_dir"/*.create | wc -l)
+        # STEP 3: Create and import databases
+        total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
         log "Starting import for $total_databases MySQL databases"
         if [ "$total_databases" -gt 0 ]; then
             current_db=1
@@ -599,34 +598,37 @@ restore_mysql() {
                 db_name=$(basename "$db_file" .create)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
-                apply_sandbox_workaround "$db_name.create" # Apply the workaround if it's needed
-                docker --context=$cpanel_username cp ${real_backup_files_path}/mysql/$db_name.create $mysql_type:/tmp/${db_name}.create  >/dev/null 2>&1
-                docker --context=$cpanel_username exec $mysql_type bash -c "$mysql_type < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+                apply_sandbox_workaround "$db_name.create"
+                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
+                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
 
                 log "Importing tables for database: $db_name"
-                apply_sandbox_workaround "$db_name.sql" # Apply the workaround if it's needed
-                docker cp --context=$cpanel_username ${real_backup_files_path}/mysql/$db_name.sql $mysql_type:/tmp/$db_name.sql >/dev/null 2>&1
-                docker --context=$cpanel_username exec $mysql_type bash -c "$mysql_type ${db_name} < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+                apply_sandbox_workaround "$db_name.sql"
+                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
+                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+
                 current_db=$((current_db + 1))
             done
-            log "Finished processing $current_db databases"
+            log "Finished processing $((current_db - 1)) databases"
         else
             log "WARNING: No MySQL databases found"
         fi
-        # STEP 4. import grants and flush privileges
+
+        # STEP 4: Import grants
         log "Importing database grants"
-        python3 $script_dir/mysql/json_2_sql.py ${real_backup_files_path}/mysql.sql ${real_backup_files_path}/mysql.TEMPORARY.sql >/dev/null 2>&1
+        python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
 
-        docker --context=$cpanel_username cp ${real_backup_files_path}/mysql.TEMPORARY.sql $cpanel_username:/tmp/mysql.TEMPORARY.sql >/dev/null 2>&1
-        docker --context=$cpanel_username exec $$mysql_type bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
+        docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
-        # STEP 5. Grant root user all access
+        # STEP 5: Grant root user all access
         grant_root_access "$cpanel_username"
 
     else
         log "No MySQL databases found to restore"
     fi
 }
+
 
 
 
