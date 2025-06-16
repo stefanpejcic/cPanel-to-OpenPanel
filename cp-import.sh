@@ -589,7 +589,21 @@ restore_mysql() {
         log "Initializing $mysql_type service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
-        # STEP 3: Create and import databases
+
+        # STEP 3: Wait for MySQL to be ready (max 60 seconds)
+        log "Waiting for MySQL service to be ready..."
+        max_wait=60
+        waited=0
+        while ! docker --context="$cpanel_username" exec "$mysql_type" mysql -e "SELECT 1" >/dev/null 2>&1; do
+            sleep 2
+            waited=$((waited + 2))
+            if [ "$waited" -ge "$max_wait" ]; then
+                log "ERROR: MySQL did not become ready after $max_wait seconds"
+                exit 1
+            fi
+        done
+
+        # STEP 4: Create and import databases
         total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
         log "Starting import for $total_databases MySQL databases"
         if [ "$total_databases" -gt 0 ]; then
@@ -614,14 +628,14 @@ restore_mysql() {
             log "WARNING: No MySQL databases found"
         fi
 
-        # STEP 4: Import grants
+        # STEP 5: Import grants
         log "Importing database grants"
         python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
 
         docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
         docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
-        # STEP 5: Grant root user all access
+        # STEP 6: Grant root user all access
         grant_root_access "$cpanel_username"
 
     else
