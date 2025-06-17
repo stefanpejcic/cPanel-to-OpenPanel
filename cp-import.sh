@@ -380,6 +380,16 @@ get_mariadb_or_mysql_for_user() {
 
 }
 
+reload_user_quotas() {
+    nohup bash -c '
+        quotacheck -avm >/dev/null 2>&1
+        repquota -u / > /etc/openpanel/openpanel/core/users/repquota
+    ' >/dev/null 2>&1 &
+}
+
+collect_stats() {
+    nohup bash -c "opencli docker-collect_stats '$cpanel_username'" >/dev/null 2>&1 &
+}
 
 # CPANEL BACKUP METADATA
 parse_cpanel_metadata() {
@@ -390,7 +400,7 @@ parse_cpanel_metadata() {
     if [ ! -f "$cp_file" ]; then
         log "WARNING: cp file $cp_file not found. Using default values."
         main_domain=""
-        cpanel_email="admin@$main_domain"
+        cpanel_email=""
         php_version="inherit"
     else
 
@@ -441,7 +451,7 @@ parse_cpanel_metadata() {
 
     # Ensure we have at least an empty string for each variable
     main_domain="${main_domain:-}"
-    cpanel_email="${cpanel_email:-}"
+    cpanel_email="${cpanel_email:-admin@$main_domain}"
     php_version="${php_version:-inherit}"
 
     log "Main Domain:          ${main_domain:-Not found}"
@@ -1326,6 +1336,9 @@ main() {
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
     ftp_accounts_import                                                        # import ftp accounts
+    
+    reload_user_quotas                                                         # refresh du and inodes
+    collect_stats                                                              # get cpu and ram usage
 
     # STEP 5. DELETE TMP FILES
     cleanup                                                                    # delete extracter files after import
