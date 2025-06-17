@@ -1290,7 +1290,9 @@ restore_notifications() {
 
 
 
-
+write_import_activity() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S')  $new_ip  Administrator ROOT user imported cpanel backup file" > /etc/openpanel/openpanel/core/users/$cpanel_username/activity.log
+}
 
 
 
@@ -1339,6 +1341,7 @@ main() {
     
     reload_user_quotas                                                         # refresh du and inodes
     collect_stats                                                              # get cpu and ram usage
+    write_import_activity
 
     # STEP 5. DELETE TMP FILES
     cleanup                                                                    # delete extracter files after import
