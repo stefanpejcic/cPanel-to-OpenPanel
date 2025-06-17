@@ -780,13 +780,6 @@ restore_files() {
     fi
     '
 
-
-    # TODO: keep as is, update --docroot when adding domains!
-    
-    # Move all files from public_html to main domain dir
-    log "Moving main domain files from public_html to $main_domain directory."
-    mv /home/$cpanel_username/public_html /home/$cpanel_username/$main_domain # openpanel has no concept of 'primary' domain
-    rm /home/$cpanel_username/www                                             # since www is just a symlink to public_html
 }
 
 
@@ -963,11 +956,31 @@ restore_domains() {
                 log "WARNING: Skipping wildcard domain $domain"
             else
                 log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
-    
+
+                userdata_file="$real_backup_files_path/userdata/$domain"
+                docroot=""
+                if [ -f "$userdata_file" ]; then
+                    original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
+                    docroot="${original_docroot#/home/$cpanel_username/}"
+                    docroot="/var/www/html/$docroot"
+                else
+                    log "WARNING: userdata file not found for $domain. Using default docroot."
+                fi
+            
                 if [ "$DRY_RUN" = true ]; then
-                    log "DRY RUN: Would restore $type $domain"
+                    log "DRY RUN: Would restore $type $domain with --docroot=${docroot:-N/A}"
                 elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                    output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                    if [ -n "$docroot" ]; then
+                        output=$(opencli domains-add "$domain" "$cpanel_username" --docroot="$docroot" 2>&1)
+                        while IFS= read -r line; do
+                            log "$line"
+                        done <<< "$output"
+                    else
+                        output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                        while IFS= read -r line; do
+                            log "$line"
+                        done <<< "$output"                        
+                    fi
                     while IFS= read -r line; do
                         log "$line"
                     done <<< "$output"
