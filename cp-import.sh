@@ -747,7 +747,19 @@ restore_dns_zones() {
     fi
 }
 
+# creates symlink of /var/ww/html/ to /home/$cpanel_username so all paths in files keep working!
+create_home_mountpoint() {
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: Would create a symlink from html_data volume to /home/$cpanel_username/"
+        return
+    fi
+    
+sed -i '/^[[:space:]]*volumes:[[:space:]]*$/{
+  N
+  /- html_data:\/var\/www\/html\// s|$|\n      - html_data:/home/${CONTEXT}/|
+}' /home/$cpanel_username/docker-compose.yml
 
+}
 
 # HOME DIR
 restore_files() {
@@ -1293,6 +1305,7 @@ main() {
     locate_backup_directories                                                  # get paths from backup
     parse_cpanel_metadata                                                      # get data and configurations
     restore_files                                                              # homedir
+    create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
     get_mariadb_or_mysql_for_user                                              # mysql or mariadb
     fix_perms                                                                  # fix permissions for all files
