@@ -752,14 +752,14 @@ restore_dns_zones() {
 # HOME DIR
 restore_files() {
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore files to /home/$cpanel_username/"
+        log "DRY RUN: Would restore files from /home/$cpanel_username/ to html_data volume"
         return
     fi
 
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
-    log "Restoring home directory ($du_needed_for_home) to /home/$cpanel_username/"
-
-    mv $real_backup_files_path/homedir /home/$cpanel_username
+    log "Restoring home directory ($du_needed_for_home) to html_data volume"
+    mkdir -p /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/
+    mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
 
     : '
     # LEAVE THIS FOR CLUSTERING FEATURE
