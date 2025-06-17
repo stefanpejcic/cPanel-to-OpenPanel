@@ -584,9 +584,13 @@ restore_mysql() {
         old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
         log "Removing old hostname $old_hostname from database grants"
         sed -i "/$old_hostname/d" "$mysql_conf"
-
+        
         # STEP 2: Start MySQL container
-        log "Initializing $mysql_type service for user"
+        if [ "$mysql_type" = "mysql" ]; then
+            $mysql_version="8.0"
+            sed -i 's/^MYSQL_VERSION=""/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
+        fi
+        log "Initializing $mysql_type $mysql_version service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
 
