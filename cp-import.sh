@@ -587,7 +587,7 @@ restore_mysql() {
         
         # STEP 2: Start MySQL container
         if [ "$mysql_type" = "mysql" ]; then
-            $mysql_version="8.0"
+            mysql_version="8.0"
             sed -i 's/^MYSQL_VERSION=""/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
         fi
         log "Initializing $mysql_type $mysql_version service for user"
