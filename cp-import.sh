@@ -957,7 +957,7 @@ restore_domains() {
             else
                 log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
 
-                userdata_file="$real_backup_files_path/userdata/$domain"
+                userdata_file="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/userdata/$domain"
                 docroot=""
                 if [ -f "$userdata_file" ]; then
                     original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
@@ -1044,9 +1044,9 @@ restore_cron() {
     fi
 
 
-if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
+if [ -f "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/cron/$cpanel_username" ]; then
     # Remove shell and mail settings (first 2 lines)
-    sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
+    sed -i '1,2d' "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/cron/$cpanel_username"
 
     ofelia_cron_path="/home/${cpanel_username}/crons.ini"
     > "$ofelia_cron_path"
@@ -1083,7 +1083,7 @@ if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
         } >> "$ofelia_cron_path"
 
         ((job_index++))
-    done < "$real_backup_files_path/cron/$cpanel_username"
+    done < "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/cron/$cpanel_username"
 
     log "Converted crontab to Ofelia config at: $ofelia_cron_path"
     
@@ -1302,9 +1302,9 @@ main() {
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
-    restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
-    restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
-    restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
+    restore_wordpress "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data" "$cpanel_username"             # import wp sites to sitemanager
+    restore_notifications "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data" "$cpanel_username"         # notification preferences from cp
+    restore_startdate "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data" "$cpanel_username"             # cp account creation date
     
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
