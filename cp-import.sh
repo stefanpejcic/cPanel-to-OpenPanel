@@ -390,7 +390,7 @@ parse_cpanel_metadata() {
     if [ ! -f "$cp_file" ]; then
         log "WARNING: cp file $cp_file not found. Using default values."
         main_domain=""
-        cpanel_email=""
+        cpanel_email="admin@$main_domain"
         php_version="inherit"
     else
 
