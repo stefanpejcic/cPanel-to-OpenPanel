@@ -759,7 +759,7 @@ restore_files() {
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring home directory ($du_needed_for_home) to html_data volume"
     mkdir -p /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/
-    mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
+    mv $real_backup_files_path/homedir/ /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
 
     : '
     # LEAVE THIS FOR CLUSTERING FEATURE
