@@ -670,8 +670,9 @@ restore_ssl() {
     fi
 
 
-    # TODO: edit to cove certs/ keys/ 
+    # TODO: edit to cover certs/ keys/ 
     log "Restoring SSL certificates for user $username"
+    # apache_tls/ dir has LE certs, custom are in ssl/
     if [ -d "$real_backup_files_path/ssl" ]; then
         for cert_file in "$real_backup_files_path/ssl"/*.crt; do
             local domain=$(basename "$cert_file" .crt)
