@@ -1021,9 +1021,6 @@ restore_domains() {
                             log "$line"
                         done <<< "$output"                        
                     fi
-                    while IFS= read -r line; do
-                        log "$line"
-                    done <<< "$output"
                 else
                     log "WARNING: $type $domain already exists and will not be added to this user."
                 fi
