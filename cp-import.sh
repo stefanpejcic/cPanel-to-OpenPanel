@@ -505,8 +505,7 @@ create_new_user() {
     if echo "$create_user_command" | grep -q "Successfully added user"; then
         shadow_file="$real_backup_files_path/shadow"
         if [ -f "$shadow_file" ]; then
-            # Source the database config file
-            . "$DB_CONFIG_FILE"
+            . /usr/local/opencli/db.sh
             
             hashed_password=$(cat "$shadow_file")
             safe_hashed_password=$(printf "%s" "$hashed_password" | sed "s/'/''/g")
