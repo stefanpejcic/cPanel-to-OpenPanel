@@ -736,7 +736,7 @@ restore_dns_zones() {
             if [ -z "$old_ip" ]; then
                 log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cpanel_username - records will not be automatically updated to new ip address."
             else
-                log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"
+                #log "Replacing old server IP: $old_ip with new IP: $new_ip in DNS zone file for domain: $zone_name"
                 sed -i "s/$old_ip/$new_ip/g" $zone_file
             fi
 
