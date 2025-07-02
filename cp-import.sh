@@ -700,12 +700,6 @@ restore_ssl() {
 restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
 
-
-            #domain_file="$real_backup_files_path/userdata/$domain"
-            #domain=$(basename "$domain_file")
-
-
-
     if [ "$DRY_RUN" = true ]; then
         log "DRY RUN: Would restore DNS zones for user $cpanel_username"
         return
@@ -753,6 +747,9 @@ restore_dns_zones() {
 
             # Clean up
             rm "$temp_file_of_created_zone"
+
+            # update NS in zone file!
+            opencli domains-update_ns ${zone_name} >/dev/null 2>&1
 
             log "DNS zone file for $zone_name has been imported."
         done
