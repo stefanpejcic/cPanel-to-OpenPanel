@@ -1336,6 +1336,7 @@ main() {
     parse_cpanel_metadata                                                      # get data and configurations
     restore_files                                                              # homedir
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
+    setquota -u $cpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
     get_mariadb_or_mysql_for_user                                              # mysql or mariadb
     fix_perms                                                                  # fix permissions for all files
@@ -1348,7 +1349,8 @@ main() {
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
     restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
-    
+    opencli user-quota $cpanel_username                                        # restore quota
+
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
     ftp_accounts_import                                                        # import ftp accounts
