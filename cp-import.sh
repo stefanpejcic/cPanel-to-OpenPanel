@@ -996,10 +996,10 @@ restore_domains() {
                 fi
             
                 if [ "$DRY_RUN" = true ]; then
-                    log "DRY RUN: Would restore $type $domain with --docroot=${docroot:-N/A}"
+                    log "DRY RUN: Would restore $type $domain with --docroot ${docroot:-N/A}"
                 elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
                     if [ -n "$docroot" ]; then
-                        output=$(opencli domains-add "$domain" "$cpanel_username" --docroot="$docroot" 2>&1)
+                        output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
                         while IFS= read -r line; do
                             log "$line"
                         done <<< "$output"
