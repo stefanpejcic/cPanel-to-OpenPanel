@@ -622,7 +622,7 @@ restore_mysql() {
         log "Waiting for MySQL service to be ready..."
         max_wait=60
         waited=0
-        while ! docker --context="$cpanel_username" exec "$mysql_type" mysql -e "SELECT 1" >/dev/null 2>&1; do
+        while ! docker --context="$cpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
@@ -661,7 +661,7 @@ restore_mysql() {
         python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
 
         docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
-        docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/mysql.TEMPORARY.sql && mysql -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
         # STEP 6: Grant root user all access
         grant_root_access "$cpanel_username"
