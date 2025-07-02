@@ -496,14 +496,26 @@ create_new_user() {
         log "DRY RUN: Would create user $username with email $email and plan $plan_name"
         return
     fi
-
+        
     create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
 
     if echo "$create_user_command" | grep -q "Successfully added user"; then
-        :
+        shadow_file="$real_backup_files_path/shadow"
+        if [ -f "$shadow_file" ]; then
+            hashed_password=$(cat "$shadow_file")
+            safe_hashed_password=$(printf "%s" "$hashed_password" | sed "s/'/''/g")
+            safe_username=$(printf "%s" "$username" | sed "s/'/''/g")
+            mysql_query="UPDATE users SET password='$safe_hashed_password' WHERE username='$safe_username';"
+            mysql --defaults-extra-file="$config_file" -D "$mysql_database" -e "$mysql_query"
+            if [ $? -eq 0 ]; then
+                echo "Imported SHA-512 crypt password hash from cpanel (will be automatically converted to pbkdf2:sha256 on first user login)"
+            else
+                echo "Failed to import SHA-512 crypt password hash from cpanel"
+            fi
+        fi       
     else
         log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
         exit 1
