@@ -618,9 +618,9 @@ restore_mysql() {
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
 
-        # STEP 3: Wait for MySQL to be ready (max 60 seconds)
+        # STEP 3: Wait for MySQL to be ready (max 90 seconds)
         log "Waiting for MySQL service to be ready..."
-        max_wait=60
+        max_wait=90
         waited=0
         while ! docker --context="$cpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
