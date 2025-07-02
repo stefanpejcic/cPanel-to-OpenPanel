@@ -23,7 +23,7 @@ Currently suported for import:
 └─ ACCOUNT
     ├─ Notification preferences
     ├─ cPanel account creation date
-    └─ locale
+    └─ cPanel account password
 
 ***emails, ftp, nodejs/python, postgres are not yet supported***
 ```
