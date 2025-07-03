@@ -12,7 +12,7 @@ DEBUG=true
 
 # wget cp backup
 # cd /home && git clone https://github.com/stefanpejcic/cPanel-to-OpenPanel
-# bash /home/cPanel-to-OpenPanel/cp-import.sh --backup-location /home/backup-10.23.2024_14-49-42_pejcic.tar.gz --plan-name ubuntu_nginx_mysql
+# bash /home/cPanel-to-OpenPanel/cp-import.sh --backup-location /home/backup-10.23.2024_14-49-42_pejcic.tar.gz --plan-name 'Standard plan'
 
 
 
