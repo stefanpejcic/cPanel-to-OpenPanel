@@ -1100,10 +1100,10 @@ restore_cron() {
             command=$(echo "$cron_line" | cut -d' ' -f6-)
 
             if [[ "$command" == *mysql* || "$command" == *mariadb* ]]; then
-                container_name="mysql"
+                container_name="$mysql_type"
                 comment_prefix=""
             elif [[ "$command" == *php* ]]; then
-                container_name="$php_version"
+                container_name="php-fpm-$php_version"
                 comment_prefix=""
             else
                 # Not supported, write commented block
