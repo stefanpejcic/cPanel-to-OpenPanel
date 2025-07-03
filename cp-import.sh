@@ -1127,7 +1127,7 @@ restore_cron() {
         if [ "$job_found" = true ]; then
             log "Converted crontab to Ofelia config at: $ofelia_cron_path"
             log "Starting Cron service"
-            output=$(cd /home/$cpanel_username && docker --context=$cpanel_username compose up -d cron 2>&1)
+            output=$(cd /home/$cpanel_username && docker --context=$cpanel_username compose up -d cron >/dev/null 2>&1)           
             while IFS= read -r line; do
                 log "$line"
             done <<< "$output"
