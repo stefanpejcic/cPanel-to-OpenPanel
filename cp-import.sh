@@ -1113,11 +1113,11 @@ restore_cron() {
 
             {
                 echo "${comment_prefix}[job-exec \"${cpanel_username}_job_$job_index\"]"
-                echo "${comment_prefix}schedule = \"$schedule\""
+                echo "${comment_prefix}schedule = $schedule"
                 if [[ -n "$container_name" ]]; then
-                    echo "${comment_prefix}container = \"$container_name\""
+                    echo "${comment_prefix}container = $container_name"
                 fi
-                echo "${comment_prefix}command = \"$command\""
+                echo "${comment_prefix}command = $command"
                 echo ""
             } >> "$ofelia_cron_path"
 
