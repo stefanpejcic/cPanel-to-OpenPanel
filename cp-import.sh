@@ -1,36 +1,9 @@
 #!/bin/bash
 pid=$$
 script_dir=$(dirname "$0")
-timestamp="$(date +'%Y-%m-%d_%H-%M-%S')" #used by log file name
-start_time=$(date +%s) #used to calculate elapsed time at the end
-
-#set -eo pipefail
-
+timestamp="$(date +'%Y-%m-%d_%H-%M-%S')"
+start_time=$(date +%s)
 DEBUG=true
-
-
-
-# wget cp backup
-# cd /home && git clone https://github.com/stefanpejcic/cPanel-to-OpenPanel
-# bash /home/cPanel-to-OpenPanel/cp-import.sh --backup-location /home/backup-10.23.2024_14-49-42_pejcic.tar.gz --plan-name 'Standard plan'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 ###############################################################
 # HELPER FUNCTIONS
@@ -42,20 +15,17 @@ usage() {
     exit 1
 }
 
-
 log() {
     local message="$1"
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] $message" | tee -a "$log_file"
 }
 
-
 debug_log() {
     if [ "$DEBUG" = true ]; then
         log "DEBUG: $1"
     fi
 }
-
 
 handle_error() {
     log "FATAL ERROR: An error occurred in function '$1' on line $2"
@@ -65,21 +35,16 @@ handle_error() {
 
 trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
 
-
 cleanup() {
     log "Cleaning up temporary files and directories"
     rm -rf "$backup_dir"
 }
-
-
-
 
 define_data_and_log(){
     local backup_location=""
     local plan_name=""
     DRY_RUN=false
 
-    # Parse command-line arguments
     while [ "$1" != "" ]; do
         case $1 in
             --backup-location ) shift
@@ -98,38 +63,26 @@ define_data_and_log(){
         shift
     done
 
-    # Validate required parameters
     if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
         usage
     fi
 
-    # Format log file
     base_name="$(basename "$backup_location")"
     base_name_no_ext="${base_name%.*}"
     local log_dir="/var/log/openpanel/admin/imports"
     mkdir -p $log_dir
     log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
-
-    # Run the main function
     echo "Import started, log file: $log_file"
-
     main
 }
-
-
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-
-
 install_dependencies() {
     log "Checking and installing dependencies..."
-
     install_needed=false
-
-    # needed commands
     declare -A commands=(
         ["tar"]="tar"
         ["parallel"]="parallel"
@@ -149,26 +102,36 @@ install_dependencies() {
         fi
     done
 
-    # If installation is needed, update package list and install missing packages
     if [ "$install_needed" = true ]; then
-        log "Updating package manager..."
+        if command_exists apt-get; then
+            log "Detected APT package manager. Updating..."
+            apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
+            apt-get update -y >/dev/null 2>&1
 
-        # Hold kernel packages to prevent upgrades
-        apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
+            for cmd in "${!commands[@]}"; do
+                if ! command_exists "$cmd"; then
+                    log "Installing ${commands[$cmd]} (APT)"
+                    apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
+                fi
+            done
 
-        # Update package list without upgrading
-        apt-get update -y >/dev/null 2>&1
+            apt-mark unhold linux-image-generic linux-headers-generic >/dev/null 2>&1
 
-        for cmd in "${!commands[@]}"; do
-            if ! command_exists "$cmd"; then
-                log "Installing ${commands[$cmd]}"
-                # Install package without upgrading or installing recommended packages
-                apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
-            fi
-        done
+        elif command_exists dnf; then
+            log "Detected DNF package manager. Updating..."
+            dnf -y makecache >/dev/null 2>&1
 
-        # Unhold kernel packages
-        apt-mark unhold linux-image-generic linux-headers-generic >/dev/null 2>&1
+            for cmd in "${!commands[@]}"; do
+                if ! command_exists "$cmd"; then
+                    log "Installing ${commands[$cmd]} (DNF)"
+                    dnf install -y "${commands[$cmd]}" >/dev/null 2>&1
+                fi
+            done
+
+        else
+            log "Error: Unsupported package manager. Please install dependencies manually."
+            exit 1
+        fi
 
         log "Dependencies installed successfully."
     else
@@ -176,17 +139,12 @@ install_dependencies() {
     fi
 }
 
-
-
 get_server_ipv4(){
     new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.com || wget --timeout=2 -qO- https://ip.openpanel.com || curl --silent --max-time 2 -4 https://ifconfig.me)
-    # if no internet, get the ipv4 from the hostname -I
     if [ -z "$new_ip" ]; then
         new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
     fi
 }
-
-
 
 validate_plan_exists(){
     if ! opencli plan-list --json | grep -qw "$plan_name"; then
