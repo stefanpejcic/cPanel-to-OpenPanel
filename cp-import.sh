@@ -10,7 +10,7 @@ DEBUG=true
 
 usage() {
     echo "Usage: $0 --backup-location <path> --plan-name <plan_name> [--dry-run]"
-    echo ""
+    echo
     echo "Example: $0 --backup-location /home/backup-7.29.2024_13-22-32_stefan.tar.gz --plan-name default_plan_nginx --dry-run"
     exit 1
 }
@@ -1013,7 +1013,7 @@ restore_cron() {
                     echo "${comment_prefix}container = $container_name"
                 fi
                 echo "${comment_prefix}command = $command"
-                echo ""
+                echo
             } >> "$ofelia_cron_path"
 
             ((job_index++))
