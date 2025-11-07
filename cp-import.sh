@@ -560,10 +560,11 @@ restore_mysql() {
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
-                log "ERROR: MySQL did not become ready after $max_wait seconds"
+                log "ERROR: $mysql_type did not become ready after $max_wait seconds"
                 exit 1
             fi
         done
+        log "$mysql_type is ready after $waited seconds"
 
         # STEP 4: Create and import databases
         total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
