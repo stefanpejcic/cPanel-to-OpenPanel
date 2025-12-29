@@ -993,7 +993,7 @@ restore_cron() {
             [[ -z "$cron_line" || "$cron_line" =~ ^# ]] && continue
 
             job_found=true
-            schedule=$(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')
+            schedule="* $(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')"
             command=$(echo "$cron_line" | cut -d' ' -f6-)
 
             if [[ "$command" == *mysql* || "$command" == *mariadb* ]]; then
