@@ -1150,6 +1150,13 @@ ftp_accounts_import() {
 # EMAILS
 import_email_accounts_and_data() {
         log "WARNING: Importing Email accounts is not yet supported"
+
+        # TODO:
+        # - check setting from openamdin where mails are stored
+        # for each email check domain owner is the new user
+        # mv email data to domain based dir
+        # mv messages to domain based dir
+        # list emails for user to confirm import
 }
 
 
