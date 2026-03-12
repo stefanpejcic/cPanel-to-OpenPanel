@@ -349,9 +349,8 @@ check_if_user_exists(){
     log "Username: $cpanel_username"
 
     local existing_user=""
-    if opencli user-list --json > /dev/null 2>&1; then
-        existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
-    fi
+    existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
+
     if [ -z "$existing_user" ]; then
         log "Username $cpanel_username is available"
         if [ "$DRY_RUN" = false ]; then
