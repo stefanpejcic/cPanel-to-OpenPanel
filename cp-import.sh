@@ -1011,7 +1011,7 @@ Currently supported features:
 │  ├─ Domains access logs (Apache domlogs)
 │  └─ DNS zones
 ├─ WEBSITES:
-│  └─ WordPress instalations from WPToolkit & Softaculous 
+│  └─ WordPress instalations from WP Toolkit & Softaculous 
 ├─ DATABASES:
 │    ├─ Remote access to MySQL
 │    └─ MySQL databases, users and grants
