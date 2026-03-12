@@ -299,14 +299,13 @@ get_mariadb_or_mysql_for_user() {
 }
 
 reload_user_quotas() {
-    nohup bash -c '
-        quotacheck -avm >/dev/null 2>&1
-        repquota -u / > /etc/openpanel/openpanel/core/users/repquota
-    ' >/dev/null 2>&1 &
+	nohup bash -c 'quotacheck -avm && repquota -u / > /etc/openpanel/openpanel/core/users/repquota' >/dev/null 2>&1 &
+	disown
 }
 
 collect_stats() {
     nohup bash -c "opencli docker-collect_stats '$cpanel_username'" >/dev/null 2>&1 &
+	disown
 }
 
 # ======================================================================
