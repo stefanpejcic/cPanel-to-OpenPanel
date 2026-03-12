@@ -364,7 +364,6 @@ restore_php_version() {
 # ======================================================================
 # MYSQL
 restore_mysql() {
-    local mysql_dir="$1"
     local sandbox_warning_logged=false
 
     log "Restoring MySQL databases for user $cyberpanel_username"
@@ -377,28 +376,20 @@ restore_mysql() {
         local text_to_check='enable the sandbox mode'
         local first_line
 
-        first_line=$(head -n 1 "${real_backup_files_path}/mysql/$db_file")
+        first_line=$(head -n 1 "${real_backup_files_path}/$db_file")
         if echo "$first_line" | grep -q "$text_to_check"; then
             if [ "$sandbox_warning_logged" = false ]; then
                 log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
                 sandbox_warning_logged=true
             fi
-            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && \
-            mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
+            tail -n +2 "${real_backup_files_path}/$db_file" > "${real_backup_files_path}/${db_file}.workaround" && \
+            mv "${real_backup_files_path}/${db_file}.workaround" "${real_backup_files_path}/$db_file"
         fi
     }
 
-    if [ -d "$mysql_dir" ]; then
-        # STEP 1: Replace old IP and hostname
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cyberpanel_username")
-        log "Replacing old server IP: $old_ip with '%' in database grants"
-        sed -i "s/$old_ip/%/g" "$mysql_conf"
+	if compgen -G "$real_backup_files_path/*.sql" > /dev/null; then
 
-        old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
-        log "Removing old hostname $old_hostname from database grants"
-        sed -i "/$old_hostname/d" "$mysql_conf"
-        
-        # STEP 2: Start MySQL container
+		# STEP 1: Start MySQL container
         if [ "$mysql_type" = "mysql" ]; then
             mysql_version="8.0"
             sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cyberpanel_username"/.env
@@ -421,22 +412,25 @@ restore_mysql() {
         log "$mysql_type is ready after $waited seconds"
 
         # STEP 4: Create and import databases
-        total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
+        total_databases=$(ls "$mysql_dir"/*.sql 2>/dev/null | wc -l)
         log "Starting import for $total_databases MySQL databases"
         if [ "$total_databases" -gt 0 ]; then
             current_db=1
-            for db_file in "$mysql_dir"/*.create; do
-                db_name=$(basename "$db_file" .create)
+            for db_file in "$mysql_dir"/*.sql; do
+                db_name=$(basename "$db_file" .sql)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
-                apply_sandbox_workaround "$db_name.create"
-                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
-                docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+                apply_sandbox_workaround "$db_name.sql"
+                # TODO
+				# CREATE USER AND COPY PASSWORD!
 
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql"
-                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
+                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
                 docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+
+                # TODO
+				# GRANT ALL TO USER AND FLUSH
 
                 current_db=$((current_db + 1))
             done
@@ -444,13 +438,6 @@ restore_mysql() {
         else
             log "WARNING: No MySQL databases found"
         fi
-
-        # STEP 5: Import grants
-        log "Importing database grants"
-        python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
-
-        docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
-        docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
     else
         log "No MySQL databases found to restore"
@@ -790,7 +777,7 @@ main() {
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     #restore_dns_zones
-    restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
+    restore_mysql                                                              # mysql databases, users and grants
     restore_ssl "$cyberpanel_username"                                         # ssl certs
     restore_wordpress                                                          # import wp sites to sitemanager
     opencli user-quota $cyberpanel_username                                    # restore quota
