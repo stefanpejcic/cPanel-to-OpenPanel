@@ -351,15 +351,13 @@ check_if_user_exists(){
     local existing_user=""
     existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
 
-    if [ -z "$existing_user" ]; then
-        log "Username $cpanel_username is available"
-        if [ "$DRY_RUN" = false ]; then
-            log "Starting import process.."
-        fi
-    else
+	if [ -n "$existing_user" ]; then
         log "FATAL ERROR: $cpanel_username already exists."
         exit 1
-    fi
+	fi
+
+    log "Username $cpanel_username is available"
+	log "Starting import process.."
 }
 
 # ======================================================================
