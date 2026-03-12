@@ -458,13 +458,13 @@ create_new_user() {
 restore_php_version() {
     local php_version="$1"
 
-    dry_run "Would sed default PHP version $php_version for user $cpanel_username" && return
+    dry_run "Would set default PHP version $php_version for user $cpanel_username" && return
 
-    # if 'inherit' we will keep the default of OpenPanel
+    # 'inherit' = OpenPanel default
     if [ "$php_version" == "inherit" ]; then
         log "PHP version is set to inherit. No changes will be made."
     else
-    # if custom version from cPanel, set it in OpenPanel also
+        # cPanel custom version
         log "Setting PHP $php_version as the default version for all new domains."
         output=$(opencli php-default "$cpanel_username" --update "$php_version" 2>&1)
         while IFS= read -r line; do
