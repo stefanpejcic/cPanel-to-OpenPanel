@@ -646,7 +646,9 @@ restore_ssl() {
             fi
         done
 
-        # TODO: reload caddy
+        nohup docker --context=default exec caddy caddy reload --config /etc/caddy/Caddyfile > /dev/null 2>&1 &
+        disown
+
     else
         log "No SSL certificates found to restore"
     fi
