@@ -250,6 +250,7 @@ parse_metadata() {
         php_version="inherit"
 		db_count=0
 		email_count=0
+		domains_count=0
     else
 
         get_xml_value() {
@@ -264,6 +265,7 @@ parse_metadata() {
 		php_version="${php_version#PHP }"
 		db_count=$(grep -o "<dbName>" "$meta_file" | wc -l)
 		email_count=$(grep -o "<emailAccount>" "$meta_file" | wc -l)
+		domains_count=$(grep -o "<path>" "$meta_file" | wc -l)
     fi
 
     main_domain="${main_domain:-Not found}"
@@ -271,6 +273,7 @@ parse_metadata() {
     php_version="${php_version:-inherit}"
 	db_count="${db_count:-0}"
 	email_count="${email_count:-0}"
+	domains_count="${domains_count:-0}"
 
     log "Username:             $cyberpanel_username"
     log "Main Domain:          $main_domain"
@@ -278,6 +281,7 @@ parse_metadata() {
     log "PHP Version:          $php_version"
 
     log "Additional metadata parsed:"
+	log "Domains Count:        $domains_count"
 	log "Database Count:       $db_count"
     log "Email Account Count:  $email_count"
     log "Finished parsing CyberPanel metadata."
@@ -586,92 +590,98 @@ restore_wordpress() {
 # ======================================================================
 # DOMAINS
 restore_domains() {
-    if [ -f "$real_backup_files_path/userdata/main" ]; then
-        file_path="$real_backup_files_path/userdata/main"
-
-
-
-        log "Detected a total of $domains_total_count domains for user."
+		file_path="$real_backup_files_path/meta.xml"
+		domains_count=$((domains_count + 1))
+        log "Detected a total of $domains_count domains for user."
 
         current_domain_count=0
 
+	    declare -gA addon_php_selection  # PHP version per domain
+	    declare -gA addon_paths          # path per domain
+	    addon_domains_array=()           # list of addon domains
+	
+	    # Extract all <domain> blocks inside <ChildDomains>
+	    awk '
+	    /<ChildDomains>/,/<\/ChildDomains>/ {
+	        if ($0 ~ /<domain>/) {
+	            if (match($0, /<domain>([^<]+)<\/domain>/, arr)) {
+	                domain = arr[1]
+	                domains[domain] = 1
+	            }
+	        }
+	        if ($0 ~ /<phpSelection>/ && domain != "") {
+	            if (match($0, /<phpSelection>([^<]+)<\/phpSelection>/, arr)) {
+	                php_sel[domain] = arr[1]
+	            }
+	        }
+	        if ($0 ~ /<path>/ && domain != "") {
+	            if (match($0, /<path>([^<]+)<\/path>/, arr)) {
+	                paths[domain] = arr[1]
+	                domain = ""   # reset domain after finishing block
+	            }
+	        }
+	    }
+	    END {
+	        for (d in domains) {
+	            printf("%s;%s;%s\n", d, php_sel[d], paths[d])
+	        }
+	    }' "$meta_file" | while IFS=';' read -r domain php path; do
+	        addon_domains_array+=("$domain")
+	        addon_php_selection["$domain"]="$php"
+	        addon_paths["$domain"]="$path"
+	    done
+
+
         create_domain(){
             domain="$1"
-            type="$2"
+            original_docroot="$2"
+			original_php="$3"
+			php="${original_php#PHP }"
 
             current_domain_count=$((current_domain_count + 1))
             if [[ $domain == \*.* ]]; then
                 log "WARNING: Skipping wildcard domain $domain"
             else
-                log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
+				if [ -n "$original_docroot" ]; then
+					docroot="${original_docroot#/home/$main_domain/}"
+					docroot="/var/www/html/$docroot"
+				else
+					docroot="/var/www/html/$domain"
+				fi
 
-                userdata_file="$real_backup_files_path/userdata/$domain"
-                docroot=""
-                if [ -f "$userdata_file" ]; then
-                    original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
-                    docroot="${original_docroot#/home/$cyberpanel_username/}"
-                    docroot="/var/www/html/$docroot"
-                else
-                    log "WARNING: userdata file not found for $domain. Using default docroot."
-                fi
+                dry_run "Would restore $domain with --docroot ${docroot:-N/A}" && return
 
-                dry_run "Would restore $type $domain with --docroot ${docroot:-N/A}" && return
-                          
                 if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                    if [ -n "$docroot" ]; then
-                        output=$(opencli domains-add "$domain" "$cyberpanel_username" --docroot "$docroot" 2>&1)
+                    if [ -n "$php" ]; then
+                        output=$(opencli domains-add "$domain" "$cyberpanel_username" --docroot "$docroot" --php_version "$php" 2>&1)
                         while IFS= read -r line; do
                             log "$line"
                         done <<< "$output"
                     else
-                        output=$(opencli domains-add "$domain" "$cyberpanel_username" 2>&1)
+                        output=$(opencli domains-add "$domain" "$cyberpanel_username" --docroot "$docroot" 2>&1)
                         while IFS= read -r line; do
                             log "$line"
                         done <<< "$output"                        
                     fi
                 else
-                    log "WARNING: $type $domain already exists and will not be added to this user."
+                    log "WARNING: $domain already exists and will not be added to this user."
                 fi
             fi
-
         }
 
         log "Processing main (primary) domain.."
-        create_domain "$main_domain" "main domain"
+        create_domain "$main_domain" "/home/$main_domain/public_html/"
 
-        if [ "$parked_domains_count" -eq 0 ]; then
-            log "No parked (alias) domains detected."
-        else
-            log "Processing parked (alias) domains.."
-            for parked in "${parked_domains_array[@]}"; do
-                create_domain "$parked" "alias domain"
-            done
-        fi
-
-        if [ "$addon_domains_count" -eq 0 ]; then
+        if [ "${#addon_domains_array[@]}" -eq 0 ]; then
             log "No addon domains detected."
         else
-            log "Processing addon domains.."
-            for addon in "${addon_domains_array[@]}"; do
-                create_domain "$addon" "addon domain"
+        	log "Processing ${#addon_domains_array[@]} child/addon domain(s):"
+	        for d in "${addon_domains_array[@]}"; do
+                create_domain "$d" "${addon_paths[$d]}" "${addon_php_selection[$d]}"
             done
         fi
 
-        if [ "$filtered_sub_domains_count" -eq 0 ]; then
-            log "No subdomains detected."
-        else
-            log "Processing sub-domains.."
-            for filtered_sub in "${filtered_sub_domains[@]}"; do
-                create_domain "$filtered_sub" "subdomain"
-            done
-        fi
-
-        log "Finished importing $domains_total_count domains"
-
-    else
-        log "FATAL ERROR: domains file userdata/main is missing in backup file."
-        exit 1
-    fi
+        log "Finished importing $domains_count domains"
 }
 
 # ======================================================================
