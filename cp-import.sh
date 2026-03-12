@@ -186,7 +186,7 @@ check_if_disk_available(){
 
 # ======================================================================
 # EXTRACT BACKUP TO TMP LOCATION
-extract_cpanel_backup() {
+extract_cyberpanel_backup() {
     backup_location="$1"
     backup_dir="$2"
     backup_dir="${backup_dir%.*}"
@@ -217,49 +217,13 @@ extract_cpanel_backup() {
     fi
 }
 
-# ======================================================================
-# LOCATE FILES IN EXTRACTED BACKUP
-locate_backup_directories() {
-    log "Locating important files in the extracted backup"
-
-    homedir=$(find "$backup_dir" -type d -name "homedir" | head -n 1)
-    if [ -z "$homedir" ]; then
-        homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
-    fi
-	[[ -n $homedir ]] || { log "FATAL ERROR: Unable to locate home directory in the backup"; exit 1; }
-
-    mysqldir="$real_backup_files_path/mysql"
-	[[ -d $mysqldir ]] || log "WARNING: Unable to locate MySQL directory in the backup"
-
-    mysql_conf="$real_backup_files_path/mysql.sql"
-	[[ -f $mysql_conf ]] || log "WARNING: Unable to locate MySQL grants file in the backup"
-
-    ftp_conf="$real_backup_files_path/proftpdpassword"
-	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
-
-    domain_logs="$real_backup_files_path/logs/"
-	[[ -d $domain_logs ]] || log "WARNING: Unable to locate apache domlogs in the backup"
-
-    cp_file="$real_backup_files_path/cp/$cpanel_username"
-	[[ -f $cp_file ]] || { log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"; exit 1; }
-
-    log "Backup directories and configuration files located:"
-    log "- Home directory:       $homedir"
-    log "- MySQL directory:      $mysqldir"
-    log "- MySQL grants:         $mysql_conf"
-    log "- PureFTPD users:       $ftp_conf"
-    log "- Domain logs:          $domain_logs"
-    log "- cPanel configuration: $cp_file"
-}
-
 get_mariadb_or_mysql_for_user() {
-    mysql_type=$(grep '^MYSQL_TYPE=' /home/$cpanel_username/.env | cut -d '=' -f2 | tr -d '"')
+    mysql_type=$(grep '^MYSQL_TYPE=' /home/$cyberpanel_username/.env | cut -d '=' -f2 | tr -d '"')
 
     if [[ "$mysql_type" != "mariadb" && "$mysql_type" != "mysql" ]]; then
         echo "Unsupported MYSQL_TYPE: $mysql_type"
         exit 1
     fi
-
 }
 
 reload_user_quotas() {
@@ -268,95 +232,72 @@ reload_user_quotas() {
 }
 
 collect_stats() {
-    nohup bash -c "opencli docker-collect_stats '$cpanel_username'" >/dev/null 2>&1 &
+    nohup bash -c "opencli docker-collect_stats '$cyberpanel_username'" >/dev/null 2>&1 &
 	disown
 }
 
 # ======================================================================
 # PARSE CPANEL BACKUP METADATA FOR ACCOUNT AND SERVICE INFORMATION
-parse_cpanel_metadata() {
-    log "Starting to parse cPanel metadata..."
+parse_metadata() {
+    log "Starting to parse cPanel metadata from meta.xml..."
 
-    cp_file="${real_backup_files_path}/cp/${cpanel_username}"
+    meta_file="${real_backup_files_path}/meta.xml"
 
-    if [ ! -f "$cp_file" ]; then
-        log "WARNING: cp file $cp_file not found. Using default values."
+    if [ ! -f "$meta_file" ]; then
+        log "WARNING: meta.xml file $meta_file not found. Using default values."
         main_domain=""
-        cpanel_email=""
+        cyberpanel_email=""
         php_version="inherit"
+		db_count=0
+		email_count=0
     else
 
-        get_cp_value() {
-            local key="$1"
-            local default="$2"
-            local value
-            value=$(grep "^$key=" "$cp_file" | cut -d'=' -f2-)
-            if [ -z "$value" ]; then
-                echo "$default"
-            else
-                echo "$value"
-            fi
+        get_xml_value() {
+            local tag="$1"
+            grep -oPm1 "(?<=<$tag>)[^<]+" "$meta_file"
         }
-
-        main_domain=$(get_cp_value "DNS" "")
-        cpanel_email=$(get_cp_value "CONTACTEMAIL" "")
-        [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "CONTACTEMAIL2" "")
-        [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "EMAIL" "")
-
-        # Cloudlinux PHP Selector
-        cfg_file="${real_backup_files_path}/homedir/.cl.selector/defaults.cfg"
-        if [ -f "$cfg_file" ]; then
-            php_version=$(grep '^php\s*=' "$cfg_file" | awk -F '=' '{print $2}' | tr -d '[:space:]')
-            [ -z "$php_version" ] && php_version="inherit"
-        else
-            php_version="inherit"
-        fi
-
-        ip_address=$(get_cp_value "IP" "")
-        plan=$(get_cp_value "PLAN" "default")
-        max_addon=$(get_cp_value "MAXADDON" "0")
-        max_ftp=$(get_cp_value "MAXFTP" "unlimited")
-        max_sql=$(get_cp_value "MAXSQL" "unlimited")
-        max_pop=$(get_cp_value "MAXPOP" "unlimited")
-        max_sub=$(get_cp_value "MAXSUB" "unlimited")
-
-        log "Additional metadata parsed:"
-        log "IP Address:           $ip_address"
-        log "Plan:                 $plan"
-        log "Max Addon Domains:    $max_addon"
-        log "Max FTP Accounts:     $max_ftp"
-        log "Max SQL Databases:    $max_sql"
-        log "Max Email Accounts:   $max_pop"
-        log "Max Subdomains:       $max_sub"
+		
+		cyberpanel_username=$(get_xml_value "userName")
+        main_domain=$(get_xml_value "masterDomain")
+        cyberpanel_email=$(get_xml_value "email")
+		php_version=$(get_xml_value "phpSelection")
+		php_version="${php_version#PHP }"
+		db_count=$(grep -o "<dbName>" "$meta_file" | wc -l)
+		email_count=$(grep -o "<emailAccount>" "$meta_file" | wc -l)
     fi
 
-    main_domain="${main_domain:-}"
-    cpanel_email="${cpanel_email:-admin@$main_domain}"
+    main_domain="${main_domain:-Not found}"
+    cyberpanel_email="${cyberpanel_email:-admin@$main_domain}"
     php_version="${php_version:-inherit}"
+	db_count="${db_count:-0}"
+	email_count="${email_count:-0}"
 
-    log "Main Domain:          ${main_domain:-Not found}"
-    log "Email:                ${cpanel_email:-Not found}"
+    log "Username:             $cyberpanel_username"
+    log "Main Domain:          $main_domain"
+    log "Email:                $cyberpanel_email"
     log "PHP Version:          $php_version"
-    log "Finished parsing cPanel metadata."
+
+    log "Additional metadata parsed:"
+	log "Database Count:       $db_count"
+    log "Email Account Count:  $email_count"
+    log "Finished parsing CyberPanel metadata."
 }
 
 # ======================================================================
 # CHECK USERNAME AVIABILITY BEFORE SGTARTING THE EXPORT PROCESS
 check_if_user_exists(){
-    backup_filename=$(basename "$backup_location")
-    cpanel_username="${backup_filename##*_}"
-    cpanel_username="${cpanel_username%%.*}"
-    log "Username: $cpanel_username"
+    log "Username: $cyberpanel_username"
 
     local existing_user=""
-    existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
+    existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cyberpanel_username\") | .id")
 
 	if [ -n "$existing_user" ]; then
-        log "FATAL ERROR: $cpanel_username already exists."
+        log "FATAL ERROR: $cyberpanel_username already exists."
+		cleanup
         exit 1
 	fi
 
-    log "Username $cpanel_username is available"
+    log "Username $cyberpanel_username is available"
 	log "Starting import process.."
 }
 
@@ -369,7 +310,7 @@ create_new_user() {
 
     dry_run "Would create user $username with email $email and plan $plan_name" && return
         
-    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" --no-sentinel 2>&1)
+    create_user_command=$(opencli user-add "$cyberpanel_username" generate "$email" "$plan_name" --no-sentinel 2>&1)
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
@@ -401,7 +342,7 @@ create_new_user() {
 restore_php_version() {
     local php_version="$1"
 
-    dry_run "Would set default PHP version $php_version for user $cpanel_username" && return
+    dry_run "Would set default PHP version $php_version for user $cyberpanel_username" && return
 
     # 'inherit' = OpenPanel default
     if [ "$php_version" == "inherit" ]; then
@@ -409,7 +350,7 @@ restore_php_version() {
     else
         # cPanel custom version
         log "Setting PHP $php_version as the default version for all new domains."
-        output=$(opencli php-default "$cpanel_username" --update "$php_version" 2>&1)
+        output=$(opencli php-default "$cyberpanel_username" --update "$php_version" 2>&1)
         while IFS= read -r line; do
             log "$line"
         done <<< "$output"
@@ -422,9 +363,9 @@ restore_mysql() {
     local mysql_dir="$1"
     local sandbox_warning_logged=false
 
-    log "Restoring MySQL databases for user $cpanel_username"
+    log "Restoring MySQL databases for user $cyberpanel_username"
 
-    dry_run "Would restore MySQL databases for user $cpanel_username" && return
+    dry_run "Would restore MySQL databases for user $cyberpanel_username" && return
 
     # Workaround for MariaDB sandbox mode bug
     apply_sandbox_workaround() {
@@ -445,7 +386,7 @@ restore_mysql() {
 
     if [ -d "$mysql_dir" ]; then
         # STEP 1: Replace old IP and hostname
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
+        old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cyberpanel_username")
         log "Replacing old server IP: $old_ip with '%' in database grants"
         sed -i "s/$old_ip/%/g" "$mysql_conf"
 
@@ -456,16 +397,16 @@ restore_mysql() {
         # STEP 2: Start MySQL container
         if [ "$mysql_type" = "mysql" ]; then
             mysql_version="8.0"
-            sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
+            sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cyberpanel_username"/.env
         fi
         log "Initializing $mysql_type $mysql_version service for user"
-        cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
+        cd "/home/$cyberpanel_username/" && docker --context="$cyberpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
         # STEP 3: Wait for MySQL to be ready (max 300 seconds)
         log "Waiting for MySQL service to be ready..."
         max_wait=300
         waited=0
-        while ! docker --context="$cpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
+        while ! docker --context="$cyberpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
@@ -485,13 +426,13 @@ restore_mysql() {
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.create"
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
+                docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
 
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql"
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
+                docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
 
                 current_db=$((current_db + 1))
             done
@@ -504,8 +445,8 @@ restore_mysql() {
         log "Importing database grants"
         python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
 
-        docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
-        docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+        docker --context="$cyberpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
+        docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
     else
         log "No MySQL databases found to restore"
@@ -550,9 +491,9 @@ restore_ssl() {
 # ======================================================================
 # DNS ZONES
 restore_dns_zones() {
-    log "Restoring DNS zones for user $cpanel_username"
+    log "Restoring DNS zones for user $cyberpanel_username"
 
-    dry_run "Would restore DNS zones for user $cpanel_username" && return
+    dry_run "Would restore DNS zones for user $cyberpanel_username" && return
 
     if [ -d "$real_backup_files_path/dnszones" ]; then
         for zone_file in "$real_backup_files_path/dnszones"/*; do
@@ -566,9 +507,9 @@ restore_dns_zones() {
                 log "Importing DNS zone: $zone_name"
             fi
 
-            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
+            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cyberpanel_username)
             if [ -z "$old_ip" ]; then
-                log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cpanel_username - records will not be automatically updated to new ip address."
+                log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cyberpanel_username - records will not be automatically updated to new ip address."
             else
                 sed -i "s/$old_ip/$new_ip/g" $zone_file
             fi
@@ -590,42 +531,42 @@ restore_dns_zones() {
 }
 
 create_home_mountpoint() {
-    dry_run "Would create a symlink from html_data volume to /home/$cpanel_username/" && return
+    dry_run "Would create a symlink from html_data volume to /home/$cyberpanel_username/" && return
     
 sed -i '/^[[:space:]]*volumes:[[:space:]]*$/{
   N
   /- html_data:\/var\/www\/html\// s|$|\n      - html_data:/home/${CONTEXT}/|
-}' /home/$cpanel_username/docker-compose.yml
+}' /home/$cyberpanel_username/docker-compose.yml
 
 }
 
 # ======================================================================
 # HOME DIR
 restore_files() {
-    dry_run "Would restore files from /home/$cpanel_username/ to html_data volume" && return
+    dry_run "Would restore files from /home/$cyberpanel_username/public_html/ to html_data volume" && return
 
-    du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
+    du_needed_for_home=$(du -sh "$real_backup_files_path/public_html" | cut -f1)
     log "Restoring home directory ($du_needed_for_home) to html_data volume"
-    mkdir -p /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/
-    rm -rf "$real_backup_files_path"/homedir/{.cpanel,.trash,wordpress-backups}
-    mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
+    mkdir -p /home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/
+    rm -rf "$real_backup_files_path"/public_html/{.cpanel,.trash,wordpress-backups}
+    mv $real_backup_files_path/public_html /home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
 }
 
 # ======================================================================
 # PERMISSIONS
 fix_perms(){
     local verbose="" #-v
-    log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
+    log "Changing permissions for all files and folders in user home directory /home/$cyberpanel_username/"
 
-    dry_run "Would change permissions with command: find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username" && return
+    dry_run "Would change permissions with command: find /home/$cyberpanel_username -print0 | xargs -0 chown $verbose $cyberpanel_username:$cyberpanel_username" && return
     
-    if ! timeout 600 find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username > /dev/null 2>&1; then
+    if ! timeout 600 find /home/$cyberpanel_username -print0 | xargs -0 chown $verbose $cyberpanel_username:$cyberpanel_username > /dev/null 2>&1; then
         if [ $? -eq 124 ]; then
             log "ERROR: Timeout reached while changing permissions (10 minutes)."
         else
             log "ERROR: Failed to change permissions."
         fi
-            log "       Make sure to change permissions manually from terminal with: find /home/$cpanel_username -print0 | xargs -0 chown -v $cpanel_username:$cpanel_username"
+            log "       Make sure to change permissions manually from terminal with: find /home/$cyberpanel_username -print0 | xargs -0 chown -v $cyberpanel_username:$cyberpanel_username"
     fi
     
 }
@@ -633,13 +574,10 @@ fix_perms(){
 # ======================================================================
 # WORDPRESS SITES
 restore_wordpress() {
-    local real_backup_files_path="$1"
-    local username="$2"
-
-    dry_run "Would restore WordPress sites for user $username" && return
+    dry_run "Would restore WordPress sites for user $cyberpanel_username" && return
 
     log "Checking user files for WordPress installations to add to Site Manager interface.."
-    output=$(opencli websites-scan $cpanel_username)
+    output=$(opencli websites-scan $cyberpanel_username)
         while IFS= read -r line; do
             log "$line"
         done <<< "$output"    
@@ -650,111 +588,8 @@ restore_wordpress() {
 restore_domains() {
     if [ -f "$real_backup_files_path/userdata/main" ]; then
         file_path="$real_backup_files_path/userdata/main"
-        main_domain=""
-        parked_domains=""
-        sub_domains=""
-        addon_domains=""
-
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^main_domain: ]]; then
-                main_domain=$(echo "$line" | awk '{print $2}')
-            elif [[ "$line" =~ ^parked_domains: ]]; then
-                parked_domains=$(echo "$line" | awk '{print $2}' | tr -d '[]')
-            elif [[ "$line" =~ ^sub_domains: ]]; then
-                sub_domains_section=true
-                continue
-            elif [[ "$line" =~ ^addon_domains: ]]; then
-                addon_domains_section=true
-                continue
-            fi
-
-            if [[ "$sub_domains_section" == true ]]; then
-                if [[ "$line" =~ ^[[:space:]]+- ]]; then
-                    sub_domains+=$(echo "$line" | awk '{print $2}')$'\n'
-                else
-                    sub_domains_section=false
-                fi
-            fi
-
-            if [[ "$addon_domains_section" == true ]]; then
-                if [[ "$line" =~ ^[[:space:]]*[^:]+:[[:space:]]*[^[:space:]]+$ ]]; then
-                    domain=$(echo "$line" | awk -F: '{print $1}' | tr -d '[:space:]')
-                    if [[ -n "$domain" && "$domain" != "main_domain" && "$domain" != "parked_domains" ]]; then
-                        addon_domains+="$domain"$'\n'
-                    fi
-                else
-                    addon_domains_section=false
-                fi
-            fi
-        done < "$file_path"
-
-        # Parse parked_domains
-        if [[ -z "$parked_domains" ]]; then
-            parked_domains_array=()
-        else
-            IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
-        fi
-
-        sub_domains_array=()
-        addon_domains_array=()
-
-        # Parse sub_domains
-        while IFS= read -r domain; do
-            if [[ -n "$domain" ]]; then
-                sub_domains_array+=("$domain")
-            fi
-        done <<< "$sub_domains"
-
-        # Parse addon_domains
-        while IFS= read -r domain; do
-            if [[ -n "$domain" ]]; then
-                addon_domains_array+=("$domain")
-            fi
-        done <<< "$addon_domains"
-
-        # Filter out subdomains that are essentially addon_domain.$main_domain
-        filtered_sub_domains=()
-        for sub_domain in "${sub_domains_array[@]}"; do
-            trimmed_sub_domain=$(echo "$sub_domain" | xargs)
-            is_addon=false
-            for addon in "${addon_domains_array[@]}"; do
-                if [[ "$trimmed_sub_domain" == "$addon.$main_domain" ]]; then
-                    is_addon=true
-                    break
-                fi
-            done
-            if [ "$is_addon" = false ]; then
-                filtered_sub_domains+=("$trimmed_sub_domain")
-            fi
-        done
-
-        main_domain_count=1
-        addon_domains_count=${#addon_domains_array[@]}
-        if [ "${#addon_domains_array[@]}" -eq 1 ] && [ -z "${addon_domains_array[0]}" ]; then
-            addon_domains_count=0
-            log "No addon domains detected."
-        else
-            log "Addon domains  ($addon_domains_count): ${addon_domains_array[@]}"
-        fi
-
-        parked_domains_count=${#parked_domains_array[@]}
-        if [ "${#parked_domains_array[@]}" -eq 1 ] && [ -z "${parked_domains_array[0]}" ]; then
-            parked_domains_count=0
-            log "No parked domains detected."
-        else
-            log "Parked domains ($parked_domains_count): ${parked_domains_array[@]}"
-        fi
-
-        filtered_sub_domains_count=${#filtered_sub_domains[@]}
-        if [ "${#filtered_sub_domains[@]}" -eq 1 ] && [ -z "${filtered_sub_domains[0]}" ]; then
-            filtered_sub_domains_count=0
-            log "No subdomains detected."
-        else
-            log "Subdomains     ($filtered_sub_domains_count): ${filtered_sub_domains[@]}"
-        fi
 
 
-        domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
 
         log "Detected a total of $domains_total_count domains for user."
 
@@ -774,7 +609,7 @@ restore_domains() {
                 docroot=""
                 if [ -f "$userdata_file" ]; then
                     original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
-                    docroot="${original_docroot#/home/$cpanel_username/}"
+                    docroot="${original_docroot#/home/$cyberpanel_username/}"
                     docroot="/var/www/html/$docroot"
                 else
                     log "WARNING: userdata file not found for $domain. Using default docroot."
@@ -784,12 +619,12 @@ restore_domains() {
                           
                 if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
                     if [ -n "$docroot" ]; then
-                        output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
+                        output=$(opencli domains-add "$domain" "$cyberpanel_username" --docroot "$docroot" 2>&1)
                         while IFS= read -r line; do
                             log "$line"
                         done <<< "$output"
                     else
-                        output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+                        output=$(opencli domains-add "$domain" "$cyberpanel_username" 2>&1)
                         while IFS= read -r line; do
                             log "$line"
                         done <<< "$output"                        
@@ -842,12 +677,12 @@ restore_domains() {
 # ======================================================================
 # CRONJOB
 restore_cron() {
-    log "Restoring cron jobs for user $cpanel_username"
+    log "Restoring cron jobs for user $cyberpanel_username"
     
-    dry_run "Would restore cron jobs for user $cpanel_username" && return
+    dry_run "Would restore cron jobs for user $cyberpanel_username" && return
 
-    if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
-        sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
+    if [ -f "$real_backup_files_path/cron/$cyberpanel_username" ]; then
+        sed -i '1,2d' "$real_backup_files_path/cron/$cyberpanel_username"
         ofelia_cron_path="/home/${cpanel_username}/crons.ini"
         > "$ofelia_cron_path"
 
@@ -882,12 +717,12 @@ restore_cron() {
             } >> "$ofelia_cron_path"
 
             ((job_index++))
-        done < "$real_backup_files_path/cron/$cpanel_username"
+        done < "$real_backup_files_path/cron/$cyberpanel_username"
 
         if [ "$job_found" = true ]; then
             log "Converted crontab to Ofelia config at: $ofelia_cron_path"
             log "Starting Cron service"
-            output=$(cd /home/$cpanel_username && docker --context=$cpanel_username compose up -d cron >/dev/null 2>&1)           
+            output=$(cd /home/$cyberpanel_username && docker --context=$cyberpanel_username compose up -d cron >/dev/null 2>&1)           
             while IFS= read -r line; do
                 log "$line"
             done <<< "$output"
@@ -907,7 +742,7 @@ run_custom_post_hook() {
     if [ -n "$post_hook" ]; then
         if [ -x "$post_hook" ]; then
             log "Executing post-hook script.."
-            "$post_hook" "$cpanel_username"
+            "$post_hook" "$cyberpanel_username"
         else
             log "WARNING: Post-hook file '$post_hook' is not executable or not found."
             exit 1
@@ -931,11 +766,11 @@ success_message() {
 
     log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
-    dry_run "import process for user $cpanel_username completed" && return
+    dry_run "import process for user $cyberpanel_username completed" && return
 
-    log "SUCCESS: Import for user $cpanel_username completed successfully."
+    log "SUCCESS: Import for user $cyberpanel_username completed successfully."
 
-    nohup opencli sentinel --action=user_create --title="User account '$cpanel_username' imported from cPanel backup" --message="User account '$cpanel_username' has been successfully imported from backup file '$backup_filename'" >/dev/null 2>&1 &
+    nohup opencli sentinel --action=user_create --title="User account '$cyberpanel_username' imported from cPanel backup" --message="User account '$cyberpanel_username' has been successfully imported from backup file '$backup_filename'" >/dev/null 2>&1 &
 	disown
 }
 
@@ -1010,45 +845,11 @@ import_email_accounts_and_data() {
         # list emails for user to confirm import
 }
 
-# ======================================================================
-# CREATED DATE IN OPENADMIN FROM WHM
-restore_startdate() {
-    real_backup_files_path="$1"
-    cpanel_username="$2"
-    cp_file_path="$real_backup_files_path/cp/$cpanel_username"
-    STARTDATE=$(grep -oP 'STARTDATE=\K\d+' "$cp_file_path")
-    
-    if [ -n "$STARTDATE" ]; then
-      human_readable_date=$(date -d @"$STARTDATE" +"%Y-%m-%d %H:%M:%S")
-      log "Updating account creation date to reflect cpanel date: $human_readable_date"
-      update_timestamp="UPDATE users SET registered_date = '$human_readable_date' WHERE username = '$cpanel_username';"
-      mysql -e "$update_timestamp"
-    fi
-}
 
 # ======================================================================
-# EMAIL NOTIFICATIONS
-restore_notifications() {
-    local real_backup_files_path="$1"
-    local cpanel_username="$2"
-    notifications_cp_file="$real_backup_files_path/cp/$cpanel_username"
-    notifications_op_file="/etc/openpanel/openpanel/core/users/$cpanel_username/notifications.yaml"
-   
-    if [ -z "$notifications_cp_file" ]; then
-        log "WARNING: Unable to access $notifications_cp_file for notification preferences - Skipping"
-    else
-        dry_run "Would restore notification preferences from $notifications_cp_file" && return
-
-        grep "notify_" $notifications_cp_file > $notifications_op_file
-        cat_notifications_file=$(cat $notifications_op_file 2>&1)
-        while IFS= read -r line; do
-            log "$line"
-        done <<< "$cat_notifications_file"
-    fi
-}
 
 write_import_activity() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S')  $new_ip  Administrator ROOT user imported cpanel backup file" > /etc/openpanel/openpanel/core/users/$cpanel_username/activity.log
+    echo "$(date '+%Y-%m-%d %H:%M:%S')  $new_ip  Administrator ROOT user imported cpanel backup file" > /etc/openpanel/openpanel/core/users/$cyberpanel_username/activity.log
 }
 
 
@@ -1061,21 +862,20 @@ main() {
     # STEP 1. PRE-RUN CHECKS
     check_if_valid_cp_backup "$backup_location"                                # is it?
     check_if_disk_available                                                    # calculate du needed for extraction
-    check_if_user_exists                                                       # make sure we dont overwrite user!
     validate_plan_exists                                                       # check if provided plan exists
     install_dependencies                                                       # install commands we will use for this script
     get_server_ipv4                                                            # used in mysql grants
     
     # STEP 2. EXTRACT
     create_tmp_dir_and_path                                                    # create /tmp/.. dir and set the path
-    extract_cpanel_backup "$backup_location" "${backup_dir}"                   # extract the archive
+    extract_cyberpanel_backup "$backup_location" "${backup_dir}"               # extract the archive
+    check_if_user_exists                                                       # only after extract we have username!
 
     # STEP 3. IMPORT
-    locate_backup_directories                                                  # get paths from backup
-    parse_cpanel_metadata                                                      # get data and configurations
+    parse_metadata                                                             # get data and configurations
     restore_files                                                              # homedir
-    create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
-    setquota -u $cpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
+    create_new_user "$cyberpanel_username" "random" "$cyberpanel_email" "$plan_name"   # create user data and container
+    setquota -u $cyberpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
     get_mariadb_or_mysql_for_user                                              # mysql or mariadb
     fix_perms                                                                  # fix permissions for all files
@@ -1084,11 +884,9 @@ main() {
     restore_dns_zones                                                          # add dns 
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
     restore_cron                                                               # cronjob
-    restore_ssl "$cpanel_username"                                             # ssl certs
-    restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
-    restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
-    restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
-    opencli user-quota $cpanel_username                                        # restore quota
+    restore_ssl "$cyberpanel_username"                                         # ssl certs
+    restore_wordpress                                                          # import wp sites to sitemanager
+    opencli user-quota $cyberpanel_username                                    # restore quota
 
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data                                             # import emails, filters, forwarders..
