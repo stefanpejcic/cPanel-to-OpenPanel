@@ -553,11 +553,11 @@ restore_files() {
     dry_run "Would restore files from /home/$cyberpanel_username/public_html/ to html_data volume" && return
 
     du_needed_for_home=$(du -sh "$real_backup_files_path/public_html" | cut -f1)
-    log "Restoring home directory ($du_needed_for_home) to html_data volume"
-    mkdir -p /home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/
+    log "Restoring public_html ($du_needed_for_home) to html_data volume"
     #rm -rf "$real_backup_files_path/public_html/.trash"
-	WWW_DIR="/home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data"
-    mv ${real_backup_files_path}public_html $WWW_DIR/
+	WWW_DIR="/home/$cyberpanel_username/docker-data/volumes/${cyberpanel_username}_html_data/_data/"
+	mkdir -p "$WWW_DIR"	
+    mv "${real_backup_files_path}public_html" "$WWW_DIR"
 }
 
 # ======================================================================
