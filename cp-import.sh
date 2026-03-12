@@ -223,11 +223,8 @@ check_if_valid_cp_backup(){
 check_if_disk_available(){
     TMP_DIR="/tmp"
     HOME_DIR="/home"
-    AVAILABLE_TMP=$(df --output=avail "$TMP_DIR" | tail -n 1)
-    AVAILABLE_HOME=$(df --output=avail "$HOME_DIR" | tail -n 1)
-
-    AVAILABLE_TMP=$(($AVAILABLE_TMP * 1024))
-    AVAILABLE_HOME=$(($AVAILABLE_HOME * 1024))
+    AVAILABLE_TMP=$(df -B1 --output=avail "$TMP_DIR" | tail -n 1)
+    AVAILABLE_HOME=$(df -B1 --output=avail "$HOME_DIR" | tail -n 1)
 
     if [[ $AVAILABLE_TMP -ge $EXTRACTED_SIZE && $AVAILABLE_HOME -ge $EXTRACTED_SIZE ]]; then
         log "There is enough disk space to extract the archive and copy it to the home directory."
