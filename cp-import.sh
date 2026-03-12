@@ -460,18 +460,29 @@ restore_mysql() {
                 apply_sandbox_workaround "$db_name.sql"
 
 				# TODO: create database!
+				docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "$mysql_type -e 'CREATE DATABASE IF NOT EXISTS \`$db_name\`;'"
 
-                log "Importing tables for database: $db_name"
-                docker --context="$cyberpanel_username" cp "${real_backup_files_path}/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
-                docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
-				
+			    sql_file="${real_backup_files_path}/${db_name}.sql"
+			    if [[ -f "$sql_file" ]]; then
+			        log "Importing tables for database: $db_name"
+			        docker --context="$cyberpanel_username" cp "$sql_file" "$mysql_type:/tmp/${db_name}.sql"
+			        docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql \`$db_name\` < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+			    fi
+
 			    for key in "${!db_users_passwords[@]}"; do
 			        if [[ $key == "$db_name:"* ]]; then
 			            user="${key#*:}"
-						# TODO: CREATE USERS AND GRANT PERMISSIONS
-			            echo "    User: $user"
-			            echo "      Host: ${db_users_hosts[$key]}" # TODO: replace localhost with %
-			            echo "      Password: ${db_users_passwords[$key]}"
+			            if [[ "$user" == "$cyberpanel_username" ]]; then
+			                continue
+			            fi
+						
+			            host="${db_users_hosts[$key]}"
+			            password="${db_users_passwords[$key]}"
+			            log "Creating user '$user'@'%' with access to $db_name"
+			            docker --context="$cyberpanel_username" exec "$mysql_type" bash -c \
+			                "mysql -e \"CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED BY '$password'; \
+			                GRANT ALL PRIVILEGES ON \\\`$db_name\\\`.* TO '$user'@'%'; \
+			                FLUSH PRIVILEGES;\""
 			        fi
 			    done
 				current_db=$((current_db + 1))
