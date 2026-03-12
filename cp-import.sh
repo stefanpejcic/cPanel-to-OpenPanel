@@ -262,38 +262,24 @@ locate_backup_directories() {
     if [ -z "$homedir" ]; then
         homedir=$(find "$backup_dir" -type d -name "public_html" -printf '%h\n' | head -n 1)
     fi
-    if [ -z "$homedir" ]; then
-        log "FATAL ERROR: Unable to locate home directory in the backup"
-        exit 1
-    fi
+	[[ -n $homedir ]] || { log "FATAL ERROR: Unable to locate home directory in the backup"; exit 1; }
 
     mysqldir="$real_backup_files_path/mysql"
-    if [ -z "$mysqldir" ]; then
-        log "WARNING: Unable to locate MySQL directory in the backup"
-    fi
+	[[ -d $mysqldir ]] || log "WARNING: Unable to locate MySQL directory in the backup"
 
     mysql_conf="$real_backup_files_path/mysql.sql"
-    if [ -z "$mysql_conf" ]; then
-        log "WARNING: Unable to locate MySQL grants file in the backup"
-    fi
+	[[ -f $mysql_conf ]] || log "WARNING: Unable to locate MySQL grants file in the backup"
 
     ftp_conf="$real_backup_files_path/proftpdpassword"
-    if [ -z "$ftp_conf" ]; then
-        log "WARNING: Unable to locate ProFTPD users file file in the backup"
-    fi
+	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
 
     domain_logs="$real_backup_files_path/logs/"
-    if [ -z "$domain_logs" ]; then
-        log "WARNING: Unable to locate apache domlogs in the backup"
-    fi
+	[[ -d $domain_logs ]] || log "WARNING: Unable to locate apache domlogs in the backup"
 
     cp_file="$real_backup_files_path/cp/$cpanel_username"
-    if [ -z "$cp_file" ]; then
-        log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"
-        exit 1
-    fi
+	[[ -f $cp_file ]] || { log "FATAL ERROR: Unable to locate cp/$cpanel_username file in the backup"; exit 1; }
 
-    log "Backup directories and configuration files located successfully"
+    log "Backup directories and configuration files located:"
     log "- Home directory:       $homedir"
     log "- MySQL directory:      $mysqldir"
     log "- MySQL grants:         $mysql_conf"
