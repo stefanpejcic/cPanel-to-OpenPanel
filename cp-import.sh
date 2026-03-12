@@ -485,7 +485,7 @@ restore_mysql() {
 			            password="${db_users_passwords[$key]}"
 			            log "Creating user '$user'@'%' with access to $db_name"
 			            docker --context="$cyberpanel_username" exec "$mysql_type" bash -c \
-			                "$mysql_type -e \"CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED BY '$password'; \
+			                "$mysql_type -e \"CREATE USER IF NOT EXISTS '$user'@'%' IDENTIFIED WITH 'mysql_native_password' AS '$password'; \							
 			                GRANT ALL PRIVILEGES ON \\\`$db_name\\\`.* TO '$user'@'%'; \
 			                FLUSH PRIVILEGES;\""
 			        fi
