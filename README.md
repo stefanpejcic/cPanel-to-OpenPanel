@@ -1,8 +1,6 @@
 # CyberPanel 2 OpenPanel account import
 Free OpenPanel module to import CyberPanel backup in OpenPanel
 
-Maintained by [CodeWithJuber](https://github.com/CodeWithJuber)
-
 ## Features
 
 Currently suported for import:
