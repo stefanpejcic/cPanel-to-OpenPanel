@@ -281,9 +281,10 @@ parse_metadata() {
     log "PHP Version:          $php_version"
 
     log "Additional metadata parsed:"
-	log "Domains Count:        $domains_count"
+	log "Addon Domains Count:  $domains_count"
 	log "Database Count:       $db_count"
     log "Email Account Count:  $email_count"
+
     log "Finished parsing CyberPanel metadata."
 }
 
@@ -412,11 +413,11 @@ restore_mysql() {
         log "$mysql_type is ready after $waited seconds"
 
         # STEP 4: Create and import databases
-        total_databases=$(ls "$mysql_dir"/*.sql 2>/dev/null | wc -l)
-        log "Starting import for $total_databases MySQL databases"
+        total_databases=$(ls "$real_backup_files_path"/*.sql 2>/dev/null | wc -l)
         if [ "$total_databases" -gt 0 ]; then
+			log "Starting import for $total_databases MySQL databases"
             current_db=1
-            for db_file in "$mysql_dir"/*.sql; do
+            for db_file in "$real_backup_files_path"/*.sql; do
                 db_name=$(basename "$db_file" .sql)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
@@ -536,7 +537,6 @@ restore_wordpress() {
 # ======================================================================
 # DOMAINS
 restore_domains() {
-		file_path="$real_backup_files_path/meta.xml"
 		domains_count=$((domains_count + 1))
         log "Detected a total of $domains_count domains for user."
 
@@ -758,11 +758,11 @@ main() {
     # STEP 2. EXTRACT
     create_tmp_dir_and_path                                                    # create /tmp/.. dir and set the path
     extract_cyberpanel_backup "$backup_location" "${backup_dir}"               # extract the archive
+    parse_metadata                                                             # get data and configurations
     check_if_user_exists                                                       # only after extract we have username!
 
     # STEP 3. IMPORT
-    parse_metadata                                                             # get data and configurations
-    restore_files                                                              # homedir
+	restore_files                                                              # homedir
     create_new_user "$cyberpanel_username" "random" "$cyberpanel_email" "$plan_name"   # create user data and container
     setquota -u $cyberpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
