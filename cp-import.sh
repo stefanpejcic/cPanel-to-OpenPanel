@@ -11,16 +11,16 @@ DEBUG=true
 # START HELPER FUNCTIONS
 
 usage() {
-    echo "Usage: $0 --backup-location <path> --plan-name <plan_name> [--dry-run]"
+    echo "Usage: $0 --backup-location='<path>' --plan-name='<plan_name>' [--dry-run]"
     echo
-    echo "Example: $0 --backup-location /home/backup-7.29.2024_13-22-32_stefan.tar.gz --plan-name "default_plan_nginx" --dry-run"
+    echo "Example: $0 --backup-location='/home/backup-7.29.2024_13-22-32_pejcic.tar.gz' --plan-name='Standard plan' --dry-run"
     exit 1
 }
 
 log() {
     local message="$1"
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] $message" | tee -a "$log_file"
+    echo "[$timestamp] $message" | tee -a "$LOG_FILE"
 }
 
 debug_log() {
@@ -53,37 +53,27 @@ cleanup() {
 
 define_data_and_log(){
     local backup_location=""
-    local plan_name=""
+    plan_name=""
     DRY_RUN=false
 
-    while [ "$1" != "" ]; do
-        case $1 in
-            --backup-location ) shift
-                                backup_location=$1
-                                ;;
-            --plan-name )       shift
-                                plan_name=$1
-                                ;;
-            --dry-run )         DRY_RUN=true
-                                ;;
-            --post-hook )       shift
-                                post_hook=$1
-                                ;;
-            * )                 usage
+    for arg in "$@"; do
+        case $arg in
+            --backup-location=*) backup_location="${arg#*=}" ;;
+            --plan-name=*)       plan_name="${arg#*=}" ;;
+            --dry-run)           DRY_RUN=true ;;
+            --post-hook=*)       post_hook="${arg#*=}" ;;
+            *)                   usage ;;
         esac
-        shift
     done
 
-    if [ -z "$backup_location" ] || [ -z "$plan_name" ]; then
-        usage
-    fi
+	[[ -z "$backup_location" || -z "$plan_name" ]] && usage
 
     base_name="$(basename "$backup_location")"
     base_name_no_ext="${base_name%.*}"
     local log_dir="/var/log/openpanel/admin/imports"
     mkdir -p $log_dir
-    log_file="$log_dir/${base_name_no_ext}_${timestamp}.log"
-    echo "Import started, log file: $log_file"
+    LOG_FILE="$log_dir/${base_name_no_ext}_${timestamp}.log"
+    echo "Import started, log file: $LOG_FILE"
     main
 }
 
@@ -148,7 +138,7 @@ install_dependencies() {
 }
 
 get_server_ipv4(){
-    new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.com || wget --timeout=2 -qO- https://ip.openpanel.com || curl --silent --max-time 2 -4 https://ifconfig.me)
+    new_ip=$(curl --silent --max-time 2 -4 https://ip.openpanel.com || curl --silent --max-time 2 -4 https://ifconfig.me)
     if [ -z "$new_ip" ]; then
         new_ip=$(ip addr|grep 'inet '|grep global|head -n1|awk '{print $2}'|cut -f1 -d/)
     fi
@@ -993,7 +983,7 @@ success_message() {
 }
 
 log_paths_are() {
-    log "Log file: $log_file"
+    log "Log file: $LOG_FILE"
     log "PID: $pid"
 }
 
