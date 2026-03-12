@@ -29,6 +29,15 @@ debug_log() {
     fi
 }
 
+dry_run() {
+    local msg="$1"
+    if [ "$DRY_RUN" = true ]; then
+        log "DRY RUN: $msg"
+        return 0
+    fi
+    return 1
+}
+
 handle_error() {
     log "FATAL ERROR: An error occurred in function '$1' on line $2"
     cleanup
@@ -439,10 +448,7 @@ create_new_user() {
     local email="$3"
     local plan_name="$4"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would create user $username with email $email and plan $plan_name"
-        return
-    fi
+    dry_run "Would create user $username with email $email and plan $plan_name" && return
         
     create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
     while IFS= read -r line; do
@@ -477,10 +483,7 @@ create_new_user() {
 restore_php_version() {
     local php_version="$1"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would sed default PHP version $php_version for user $cpanel_username"
-        return
-    fi
+    dry_run "Would sed default PHP version $php_version for user $cpanel_username" && return
 
     # if 'inherit' we will keep the default of OpenPanel
     if [ "$php_version" == "inherit" ]; then
@@ -500,10 +503,8 @@ restore_php_version() {
 # PHPMYADMIN
 grant_root_access() {
     local username="$1"
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would grant root user access to all databases for user $username"
-        return
-    fi
+    dry_run "Would grant root user access to all databases for user $username" && return
+
     log "Granting root access to all databases for user $username"
     phpmyadmin_user="root"
     sql_command="GRANT ALL ON *.* TO 'root'@'localhost'; FLUSH PRIVILEGES;"
@@ -520,10 +521,7 @@ restore_mysql() {
 
     log "Restoring MySQL databases for user $cpanel_username"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore MySQL databases for user $cpanel_username"
-        return
-    fi
+    dry_run "Would restore MySQL databases for user $cpanel_username" && return
 
     # Workaround for MariaDB sandbox mode bug
     apply_sandbox_workaround() {
@@ -621,10 +619,7 @@ restore_mysql() {
 restore_ssl() {
     local username="$1"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore SSL certificates for user $username"
-        return
-    fi
+    dry_run "Would restore SSL certificates for user $username" && return
 
     # TODO: edit to cover certs/ keys/ 
     log "Restoring SSL certificates for user $username"
@@ -662,10 +657,7 @@ restore_ssl() {
 restore_dns_zones() {
     log "Restoring DNS zones for user $cpanel_username"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore DNS zones for user $cpanel_username"
-        return
-    fi
+    dry_run "Would restore DNS zones for user $cpanel_username" && return
 
     if [ -d "$real_backup_files_path/dnszones" ]; then
         for zone_file in "$real_backup_files_path/dnszones"/*; do
@@ -705,10 +697,7 @@ restore_dns_zones() {
 
 # creates symlink of /var/www/html/ to /home/$cpanel_username so all paths in files keep working!
 create_home_mountpoint() {
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would create a symlink from html_data volume to /home/$cpanel_username/"
-        return
-    fi
+    dry_run "Would create a symlink from html_data volume to /home/$cpanel_username/" && return
     
 sed -i '/^[[:space:]]*volumes:[[:space:]]*$/{
   N
@@ -720,10 +709,7 @@ sed -i '/^[[:space:]]*volumes:[[:space:]]*$/{
 # ======================================================================
 # HOME DIR
 restore_files() {
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore files from /home/$cpanel_username/ to html_data volume"
-        return
-    fi
+    dry_run "Would restore files from /home/$cpanel_username/ to html_data volume" && return
 
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring home directory ($du_needed_for_home) to html_data volume"
@@ -738,10 +724,8 @@ restore_files() {
 fix_perms(){
     local verbose="" #-v
     log "Changing permissions for all files and folders in user home directory /home/$cpanel_username/"
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would change permissions with command: find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username"
-        return
-    fi
+
+    dry_run "Would change permissions with command: find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username" && return
     
     if ! timeout 600 find /home/$cpanel_username -print0 | xargs -0 chown $verbose $cpanel_username:$cpanel_username > /dev/null 2>&1; then
         if [ $? -eq 124 ]; then
@@ -760,10 +744,7 @@ restore_wordpress() {
     local real_backup_files_path="$1"
     local username="$2"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore WordPress sites for user $username"
-        return
-    fi
+    dry_run "Would restore WordPress sites for user $username" && return
 
     log "Checking user files for WordPress installations to add to Site Manager interface.."
     output=$(opencli websites-scan $cpanel_username)
@@ -906,10 +887,10 @@ restore_domains() {
                 else
                     log "WARNING: userdata file not found for $domain. Using default docroot."
                 fi
-            
-                if [ "$DRY_RUN" = true ]; then
-                    log "DRY RUN: Would restore $type $domain with --docroot ${docroot:-N/A}"
-                elif opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+
+                dry_run "Would restore $type $domain with --docroot ${docroot:-N/A}" && return
+                          
+                if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
                     if [ -n "$docroot" ]; then
                         output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
                         while IFS= read -r line; do
@@ -972,11 +953,8 @@ restore_domains() {
 # CRONJOB
 restore_cron() {
     log "Restoring cron jobs for user $cpanel_username"
-
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: Would restore cron jobs for user $cpanel_username"
-        return
-    fi
+    
+    dry_run "Would restore cron jobs for user $cpanel_username" && return
 
     if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
         sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
@@ -1063,11 +1041,10 @@ success_message() {
 
     log "Elapsed time: ${hours}h ${minutes}m ${seconds}s"
 
-    if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN: import process for user $cpanel_username completed."
-    else
-        log "SUCCESS: Import for user $cpanel_username completed successfully."
-    fi
+    dry_run "import process for user $cpanel_username completed" && return
+
+    log "SUCCESS: Import for user $cpanel_username completed successfully."
+
 }
 
 log_paths_are() {
@@ -1169,14 +1146,8 @@ restore_notifications() {
     if [ -z "$notifications_cp_file" ]; then
         log "WARNING: Unable to access $notifications_cp_file for notification preferences - Skipping"
     else
-        if [ "$DRY_RUN" = true ]; then
-            log "DRY RUN: Would restore notification preferences from $notifications_cp_file"
-            check_notifications=$(grep "notify_" $notifications_cp_file)
-            while IFS= read -r line; do
-                log "$line"
-            done <<< "$check_notifications"
-            return
-        fi  
+        dry_run "Would restore notification preferences from $notifications_cp_file" && return
+
         grep "notify_" $notifications_cp_file > $notifications_op_file
         cat_notifications_file=$(cat $notifications_op_file 2>&1)
         while IFS= read -r line; do
