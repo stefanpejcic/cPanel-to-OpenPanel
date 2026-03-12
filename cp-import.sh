@@ -174,48 +174,26 @@ validate_plan_exists(){
 
 # ======================================================================
 # CHECK BACKUP FILE EXTENSION AND DETERMINE SIZE NEEDED FOR RESTORE
-check_if_valid_cp_backup(){
+check_if_valid_cp_backup() {
     local backup_location="$1"
+    local backup_filename
+    backup_filename=$(basename "$backup_location")
+
     ARCHIVE_SIZE=$(stat -c%s "$backup_location")
-    local backup_filename=$(basename "$backup_location")
-    extraction_command=""
+
+    extraction_command="tar -xzf"
+    multiplier=2
 
     case "$backup_filename" in
-        cpmove-*.tar.gz)
-            log "Identified cpmove backup"
-            extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
-        ;;
-        backup-*.tar.gz)
-            log "Identified full or partial cPanel backup"
-            extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
-            ;;
-        *.tar.gz)
-            log "Identified gzipped tar backup"
-            extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 2))
-            ;;
-        *.tgz)
-            log "Identified tgz backup"
-            extraction_command="tar -xzf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
-            ;;
-        *.tar)
-            log "Identified tar backup"
-            extraction_command="tar -xf"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
-            ;;
-        *.zip)
-            log "Identified zip backup"
-            extraction_command="unzip"
-            EXTRACTED_SIZE=$(($ARCHIVE_SIZE * 3))
-            ;;
-        *)
-            log "FATAL ERROR: Unrecognized backup format: $backup_filename"
-            exit 1
-            ;;
+        cpmove-*.tar.gz) log "Identified cpmove backup" ;;
+        backup-*.tar.gz|*.tar.gz) log "Identified gzipped tar backup" ;;
+        *.tgz) log "Identified tgz backup"; multiplier=3 ;;
+        *.tar) log "Identified tar backup"; extraction_command="tar -xf"; multiplier=3 ;;
+        *.zip) log "Identified zip backup"; extraction_command="unzip"; multiplier=3 ;;
+        *) log "FATAL ERROR: Unrecognized backup format: $backup_filename"; exit 1 ;;
     esac
+
+    EXTRACTED_SIZE=$((ARCHIVE_SIZE * multiplier))
 }
 
 # ======================================================================
