@@ -388,6 +388,43 @@ restore_mysql() {
         fi
     }
 
+
+	declare -A db_users_passwords  # key: "dbName:dbUser" -> password
+	declare -A db_users_hosts      # key: "dbName:dbUser" -> host
+	databases_array=()             # list of database names
+	
+	current_db=""
+	current_user=""
+	current_host=""
+	current_pass=""
+	
+	while IFS= read -r line; do
+	    case "$line" in
+	        *"<dbName>"*)
+	            current_db=$(echo "$line" | sed -E 's/.*<dbName>([^<]+)<\/dbName>.*/\1/')
+	            databases_array+=("$current_db")
+	            ;;
+	        *"<dbUser>"*)
+	            current_user=$(echo "$line" | sed -E 's/.*<dbUser>([^<]+)<\/dbUser>.*/\1/')
+	            ;;
+	        *"<dbHost>"*)
+	            current_host=$(echo "$line" | sed -E 's/.*<dbHost>([^<]+)<\/dbHost>.*/\1/')
+	            ;;
+	        *"<password>"*)
+	            current_pass=$(echo "$line" | sed -E 's/.*<password>([^<]+)<\/password>.*/\1/')
+	            # Save info in associative arrays
+	            key="${current_db}:${current_user}"
+	            db_users_passwords["$key"]="$current_pass"
+	            db_users_hosts["$key"]="$current_host"
+	            # Reset user-specific values for next <databaseUsers> block
+	            current_user=""
+	            current_host=""
+	            current_pass=""
+	            ;;
+	    esac
+	done < "$META_FILE"
+	
+
 	if compgen -G "$real_backup_files_path/*.sql" > /dev/null; then
 
 		# STEP 1: Start MySQL container
@@ -417,24 +454,28 @@ restore_mysql() {
         if [ "$total_databases" -gt 0 ]; then
 			log "Starting import for $total_databases MySQL databases"
             current_db=1
-            for db_file in "$real_backup_files_path"/*.sql; do
-                db_name=$(basename "$db_file" .sql)
 
+			for db_name in "${databases_array[@]}"; do
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.sql"
-                # TODO
-				# CREATE USER AND COPY PASSWORD!
+
+				# TODO: create database!
 
                 log "Importing tables for database: $db_name"
-                apply_sandbox_workaround "$db_name.sql"
                 docker --context="$cyberpanel_username" cp "${real_backup_files_path}/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
                 docker --context="$cyberpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
-
-                # TODO
-				# GRANT ALL TO USER AND FLUSH
-
-                current_db=$((current_db + 1))
-            done
+				
+			    for key in "${!db_users_passwords[@]}"; do
+			        if [[ $key == "$db_name:"* ]]; then
+			            user="${key#*:}"
+						# TODO: CREATE USERS AND GRANT PERMISSIONS
+			            echo "    User: $user"
+			            echo "      Host: ${db_users_hosts[$key]}" # TODO: replace localhost with %
+			            echo "      Password: ${db_users_passwords[$key]}"
+			        fi
+			    done
+				current_db=$((current_db + 1))
+			done
             log "Finished processing $((current_db - 1)) databases"
         else
             log "WARNING: No MySQL databases found"
