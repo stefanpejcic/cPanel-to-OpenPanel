@@ -432,7 +432,7 @@ restore_mysql() {
             mysql_version="8.0"
             sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cyberpanel_username"/.env
         fi
-        log "Initializing $mysql_type $mysql_version service for user"
+        log "Initializing $mysql_type service for user"
         cd "/home/$cyberpanel_username/" && docker --context="$cyberpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
         # STEP 3: Wait for MySQL to be ready (max 300 seconds)
