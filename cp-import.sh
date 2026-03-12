@@ -630,14 +630,17 @@ restore_ssl() {
     log "Restoring SSL certificates for user $username"
     # apache_tls/ dir has LE certs, custom are in ssl/
     if [ -d "$real_backup_files_path/ssl" ]; then
+        dest_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/"
         for cert_file in "$real_backup_files_path/ssl"/*.crt; do
             local domain=$(basename "$cert_file" .crt)
             local key_file="$real_backup_files_path/ssl/$domain.key"
-            
-            # todo: move keys to var/www/html first!            
+            local new_cert_file="$dest_dir/$domain.crt"
+            local new_key_file="$dest_dir/$domain.key"
             if [ -f "$key_file" ]; then
+                cp "$key_file" "$new_key_file"
+                cp "$cert_file" "$new_cert_file"             
                 log "Installing SSL certificate for domain: $domain"
-                opencli domains-ssl "$domain" "$cert_file" "$key_file"
+                opencli domains-ssl "$domain" "/var/www/html/$domain.key" "/var/www/html/$domain.crt"
             else
                 log "SSL key file not found for domain: $domain"
             fi
