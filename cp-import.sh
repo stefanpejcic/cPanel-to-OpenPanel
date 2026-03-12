@@ -475,20 +475,6 @@ restore_php_version() {
 
 
 # ======================================================================
-# PHPMYADMIN
-grant_root_access() {
-    local username="$1"
-    dry_run "Would grant root user access to all databases for user $username" && return
-
-    log "Granting root access to all databases for user $username"
-    phpmyadmin_user="root"
-    sql_command="GRANT ALL ON *.* TO 'root'@'localhost'; FLUSH PRIVILEGES;"
-    grant_commands=$(docker --context=$username exec mysql mysql -N -e "$sql_command")
-    log "Access granted to root user for all databases of $username"
-}
-
-
-# ======================================================================
 # MYSQL
 restore_mysql() {
     local mysql_dir="$1"
@@ -578,9 +564,6 @@ restore_mysql() {
 
         docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
         docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
-
-        # STEP 6: Grant root user all access
-        grant_root_access "$cpanel_username"
 
     else
         log "No MySQL databases found to restore"
