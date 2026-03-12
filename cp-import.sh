@@ -87,7 +87,6 @@ install_dependencies() {
     install_needed=false
     declare -A commands=(
         ["tar"]="tar"
-        ["rsync"]="rsync"
         ["unzip"]="unzip"
         ["jq"]="jq"
         ["pigz"]="pigz"
@@ -726,26 +725,6 @@ restore_files() {
     mkdir -p /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/
     #rm -rf "$real_backup_files_path"/homedir/{.cpanel,.trash,wordpress-backups}
     mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
-
-    : '
-    # LEAVE THIS FOR CLUSTERING FEATURE
-    rsync -Prltvc --info=progress2 "$real_backup_files_path/homedir/" "/home/$cpanel_username/" 2>&1 | while IFS= read -r line; do
-        log "$line"
-    done
-
-    log "Finished transferring files, comparing to source.."
-    original_size=$(du -sb "$real_backup_files_path/homedir" | cut -f1)
-    copied_size=$(du -sb "/home/$cpanel_username/" | cut -f1)
-
-    if [[ "$original_size" -eq "$copied_size" ]]; then
-        log "The original and target directories have the same size."
-    else
-        log "WARNING: The original and target directories differ in size after restore."
-        log "Original size: $original_size bytes"
-        log "Target size:   $copied_size bytes"
-    fi
-    '
-
 }
 
 
