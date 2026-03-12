@@ -425,7 +425,7 @@ create_new_user() {
 
     dry_run "Would create user $username with email $email and plan $plan_name" && return
         
-    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" 2>&1)
+    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" --no-sentinel 2>&1)
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
@@ -1003,6 +1003,8 @@ success_message() {
 
     log "SUCCESS: Import for user $cpanel_username completed successfully."
 
+    nohup opencli sentinel --action=user_create --title="User account '$cpanel_username' imported from cPanel backup" --message="User account '$cpanel_username' has been successfully imported from backup file '$backup_filename'" >/dev/null 2>&1 &
+	disown
 }
 
 log_paths_are() {
