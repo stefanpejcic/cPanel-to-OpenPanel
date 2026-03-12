@@ -486,12 +486,12 @@ restore_mysql() {
                 log "Creating database: $db_name (${current_db}/${total_databases})"
                 apply_sandbox_workaround "$db_name.create"
                 docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+                docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
 
                 log "Importing tables for database: $db_name"
                 apply_sandbox_workaround "$db_name.sql"
                 docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "mysql $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+                docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
 
                 current_db=$((current_db + 1))
             done
