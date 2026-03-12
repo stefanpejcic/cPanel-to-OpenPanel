@@ -466,7 +466,7 @@ restore_ssl() {
                 cp "$key_file" "$new_key_file"
                 cp "$cert_file" "$new_cert_file"             
                 log "Installing SSL certificate for domain: $domain"
-                opencli domains-ssl "$domain" "/var/www/html/$domain.key" "/var/www/html/$domain.crt"
+                opencli domains-ssl "$domain" custom "/var/www/html/$domain.key" "/var/www/html/$domain.crt"
             else
                 log "SSL key file not found for domain: $domain"
             fi
