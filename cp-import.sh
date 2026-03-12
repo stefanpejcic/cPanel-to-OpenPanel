@@ -472,6 +472,11 @@ restore_mysql() {
 			    for key in "${!db_users_passwords[@]}"; do
 			        if [[ $key == "$db_name:"* ]]; then
 			            user="${key#*:}"
+
+					    if [[ -z "$user" ]]; then
+					        continue
+					    fi
+
 			            if [[ "$user" == "$cyberpanel_username" ]]; then
 			                continue
 			            fi
