@@ -18,9 +18,8 @@ usage() {
 }
 
 log() {
-    local message="$1"
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] $message" | tee -a "$LOG_FILE"
+    echo "[$timestamp] $1" | tee -a "$LOG_FILE"
 }
 
 debug_log() {
