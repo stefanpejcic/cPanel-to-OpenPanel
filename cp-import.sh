@@ -293,7 +293,7 @@ check_if_user_exists(){
     log "Username: $cyberpanel_username"
 
     local existing_user=""
-    existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cyberpanel_username\") | .id")
+	existing_user=$(opencli user-list --json | jq -r '.data[] | select(.username == "'"$cyberpanel_username"'") | .id')
 
 	if [ -n "$existing_user" ]; then
         log "FATAL ERROR: $cyberpanel_username already exists."
