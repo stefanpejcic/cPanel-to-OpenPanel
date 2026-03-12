@@ -87,12 +87,10 @@ install_dependencies() {
     install_needed=false
     declare -A commands=(
         ["tar"]="tar"
-        ["parallel"]="parallel"
         ["rsync"]="rsync"
         ["unzip"]="unzip"
         ["jq"]="jq"
         ["pigz"]="pigz"
-        ["mysql"]="mysql-client"
         ["wget"]="wget"
         ["curl"]="curl"
     )
