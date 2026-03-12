@@ -241,10 +241,10 @@ collect_stats() {
 parse_metadata() {
     log "Starting to parse cPanel metadata from meta.xml..."
 
-    meta_file="${real_backup_files_path}/meta.xml"
+    META_FILE="${real_backup_files_path}/meta.xml"
 
-    if [ ! -f "$meta_file" ]; then
-        log "WARNING: meta.xml file $meta_file not found. Using default values."
+    if [ ! -f "$META_FILE" ]; then
+        log "WARNING: meta.xml file $META_FILE not found. Using default values."
         main_domain=""
         cyberpanel_email=""
         php_version="inherit"
@@ -255,7 +255,7 @@ parse_metadata() {
 
         get_xml_value() {
             local tag="$1"
-            grep -oPm1 "(?<=<$tag>)[^<]+" "$meta_file"
+            grep -oPm1 "(?<=<$tag>)[^<]+" "$META_FILE"
         }
 		
 		cyberpanel_username=$(get_xml_value "userName")
@@ -263,9 +263,9 @@ parse_metadata() {
         cyberpanel_email=$(get_xml_value "email")
 		php_version=$(get_xml_value "phpSelection")
 		php_version="${php_version#PHP }"
-		db_count=$(grep -o "<dbName>" "$meta_file" | wc -l)
-		email_count=$(grep -o "<emailAccount>" "$meta_file" | wc -l)
-		domains_count=$(grep -o "<path>" "$meta_file" | wc -l)
+		db_count=$(grep -o "<dbName>" "$META_FILE" | wc -l)
+		email_count=$(grep -o "<emailAccount>" "$META_FILE" | wc -l)
+		domains_count=$(grep -o "<path>" "$META_FILE" | wc -l)
     fi
 
     main_domain="${main_domain:-Not found}"
@@ -571,7 +571,7 @@ restore_domains() {
 	        for (d in domains) {
 	            printf("%s;%s;%s\n", d, php_sel[d], paths[d])
 	        }
-	    }' "$meta_file" | while IFS=';' read -r domain php path; do
+	    }' "$META_FILE" | while IFS=';' read -r domain php path; do
 	        addon_domains_array+=("$domain")
 	        addon_php_selection["$domain"]="$php"
 	        addon_paths["$domain"]="$path"
