@@ -558,7 +558,8 @@ restore_files() {
     log "Restoring home directory ($du_needed_for_home) to html_data volume"
     mkdir -p /home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/
     #rm -rf "$real_backup_files_path/public_html/.trash"
-    mv ${real_backup_files_path}public_html /home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
+	WWW_DIR="/home/$cyberpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data"
+    mv ${real_backup_files_path}public_html $WWW_DIR/
 }
 
 # ======================================================================
