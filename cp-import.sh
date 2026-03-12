@@ -85,7 +85,6 @@ install_dependencies() {
     install_needed=false
     commands=(tar unzip jq pigz wget curl)
 
-    # Check if any command is missing
     for cmd in "${commands[@]}"; do
         command_exists "$cmd" || { install_needed=true; break; }
     done
@@ -135,12 +134,6 @@ validate_plan_exists(){
 # END HELPER FUNCTIONS
 # ======================================================================
 
-
-
-
-
-# ======================================================================
-# MAIN
 
 
 # ======================================================================
@@ -319,7 +312,6 @@ parse_cpanel_metadata() {
             php_version="inherit"
         fi
 
-        # Additional metadata
         ip_address=$(get_cp_value "IP" "")
         plan=$(get_cp_value "PLAN" "default")
         max_addon=$(get_cp_value "MAXADDON" "0")
@@ -371,7 +363,6 @@ check_if_user_exists(){
     fi
 }
 
-
 # ======================================================================
 # CREATE OPENPANEL USER
 create_new_user() {
@@ -408,7 +399,6 @@ create_new_user() {
     fi
 }
 
-
 # ======================================================================
 # PHP VERSION
 restore_php_version() {
@@ -428,7 +418,6 @@ restore_php_version() {
         done <<< "$output"
     fi
 }
-
 
 # ======================================================================
 # MYSQL
@@ -526,8 +515,6 @@ restore_mysql() {
     fi
 }
 
-
-
 # ======================================================================
 # SSL CERTIFICATES
 restore_ssl() {
@@ -562,9 +549,6 @@ restore_ssl() {
         log "No SSL certificates found to restore"
     fi
 }
-
-
-
 
 # ======================================================================
 # DNS ZONES
@@ -608,8 +592,6 @@ restore_dns_zones() {
     fi
 }
 
-
-# creates symlink of /var/www/html/ to /home/$cpanel_username so all paths in files keep working!
 create_home_mountpoint() {
     dry_run "Would create a symlink from html_data volume to /home/$cpanel_username/" && return
     
@@ -631,7 +613,6 @@ restore_files() {
     rm -rf "$real_backup_files_path"/homedir/{.cpanel,.trash,wordpress-backups}
     mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
 }
-
 
 # ======================================================================
 # PERMISSIONS
@@ -861,8 +842,6 @@ restore_domains() {
     fi
 }
 
-
-
 # ======================================================================
 # CRONJOB
 restore_cron() {
@@ -1034,9 +1013,8 @@ import_email_accounts_and_data() {
         # list emails for user to confirm import
 }
 
-
 # ======================================================================
-# CCREATED DATE IN OPENADMIN FROM WHM
+# CREATED DATE IN OPENADMIN FROM WHM
 restore_startdate() {
     real_backup_files_path="$1"
     cpanel_username="$2"
@@ -1078,11 +1056,7 @@ write_import_activity() {
 
 
 
-
-
-
-###################################### MAIN SCRIPT EXECUTION ######################################
-###################################################################################################
+# MAIN
 main() {
     start_message                                                              # what will be imported
     log_paths_are                                                              # where will we store the progress
@@ -1138,5 +1112,5 @@ main() {
 }
 
 # ======================================================================
-# MAIN
+# ENTRYPOINT
 define_data_and_log "$@"
