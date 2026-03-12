@@ -467,11 +467,11 @@ restore_ssl() {
     # TODO: edit to cover certs/ keys/ 
     log "Restoring SSL certificates for user $username"
     # apache_tls/ dir has LE certs, custom are in ssl/
-    if [ -d "$real_backup_files_path/ssl" ]; then
+	if compgen -G "$real_backup_files_path/*.cert.pem" > /dev/null; then
         dest_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/"
-        for cert_file in "$real_backup_files_path/ssl"/*.crt; do
-            local domain=$(basename "$cert_file" .crt)
-            local key_file="$real_backup_files_path/ssl/$domain.key"
+        for cert_file in "$real_backup_files_path"/*.cert.pem; do
+            local domain=$(basename "$cert_file" .cert.pem)
+            local key_file="$real_backup_files_path/$domain.privkey.pem"
             local new_cert_file="$dest_dir/$domain.crt"
             local new_key_file="$dest_dir/$domain.key"
             if [ -f "$key_file" ]; then
@@ -492,47 +492,6 @@ restore_ssl() {
     fi
 }
 
-# ======================================================================
-# DNS ZONES
-restore_dns_zones() {
-    log "Restoring DNS zones for user $cyberpanel_username"
-
-    dry_run "Would restore DNS zones for user $cyberpanel_username" && return
-
-    if [ -d "$real_backup_files_path/dnszones" ]; then
-        for zone_file in "$real_backup_files_path/dnszones"/*; do
-            local zone_name=$(basename "${zone_file%.db}")
-
-            # Check if the destination zone file exists, if not, it was probably a subdomain that had no dns zone
-            if [ ! -f "/etc/bind/zones/${zone_name}.zone" ]; then
-                log "DNS zone file /etc/bind/zones/${zone_name}.zone does not exist. Skipping import for $zone_name."
-                continue
-            else
-                log "Importing DNS zone: $zone_name"
-            fi
-
-            old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cyberpanel_username)
-            if [ -z "$old_ip" ]; then
-                log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cyberpanel_username - records will not be automatically updated to new ip address."
-            else
-                sed -i "s/$old_ip/$new_ip/g" $zone_file
-            fi
-            temp_file_of_original_zone=$(mktemp)
-            temp_file_of_created_zone=$(mktemp)
-
-            awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$zone_file" > "$temp_file_of_original_zone"
-            awk '/NS/ { found=1; next } found { print }' "/etc/bind/zones/${zone_name}.zone" > "$temp_file_of_created_zone"
-            cat "$temp_file_of_created_zone" >> "$temp_file_of_original_zone"
-            mv "$temp_file_of_original_zone" "/etc/bind/zones/${zone_name}.zone"
-            rm "$temp_file_of_created_zone"
-
-            opencli domains-update_ns ${zone_name} >/dev/null 2>&1
-            log "DNS zone file for $zone_name has been imported."
-        done
-    else
-        log "No DNS zones found to restore"
-    fi
-}
 
 create_home_mountpoint() {
     dry_run "Would create a symlink from html_data volume to /home/$cyberpanel_username/" && return
@@ -684,67 +643,6 @@ restore_domains() {
         log "Finished importing $domains_count domains"
 }
 
-# ======================================================================
-# CRONJOB
-restore_cron() {
-    log "Restoring cron jobs for user $cyberpanel_username"
-    
-    dry_run "Would restore cron jobs for user $cyberpanel_username" && return
-
-    if [ -f "$real_backup_files_path/cron/$cyberpanel_username" ]; then
-        sed -i '1,2d' "$real_backup_files_path/cron/$cyberpanel_username"
-        ofelia_cron_path="/home/${cpanel_username}/crons.ini"
-        > "$ofelia_cron_path"
-
-        job_index=1
-        job_found=false
-        while IFS= read -r cron_line; do
-            [[ -z "$cron_line" || "$cron_line" =~ ^# ]] && continue
-
-            job_found=true
-            schedule="* $(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')"
-            command=$(echo "$cron_line" | cut -d' ' -f6-)
-
-            if [[ "$command" == *mysql* || "$command" == *mariadb* ]]; then
-                container_name="$mysql_type"
-                comment_prefix=""
-            elif [[ "$command" == *php* ]]; then
-                container_name="php-fpm-$php_version"
-                comment_prefix=""
-            else
-                container_name=""
-                comment_prefix="# "
-            fi
-
-            {
-                echo "${comment_prefix}[job-exec \"${cpanel_username}_job_$job_index\"]"
-                echo "${comment_prefix}schedule = $schedule"
-                if [[ -n "$container_name" ]]; then
-                    echo "${comment_prefix}container = $container_name"
-                fi
-                echo "${comment_prefix}command = $command"
-                echo
-            } >> "$ofelia_cron_path"
-
-            ((job_index++))
-        done < "$real_backup_files_path/cron/$cyberpanel_username"
-
-        if [ "$job_found" = true ]; then
-            log "Converted crontab to Ofelia config at: $ofelia_cron_path"
-            log "Starting Cron service"
-            output=$(cd /home/$cyberpanel_username && docker --context=$cyberpanel_username compose up -d cron >/dev/null 2>&1)           
-            while IFS= read -r line; do
-                log "$line"
-            done <<< "$output"
-        else
-            log "No cron jobs found in file, not starting cron service"
-            rm -f "$ofelia_cron_path"
-        fi
-
-    else
-        log "No cron jobs found to restore"
-    fi
-}
 
 # ======================================================================
 # POST-IMPORT HOOK
@@ -891,9 +789,8 @@ main() {
     fix_perms                                                                  # fix permissions for all files
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
-    restore_dns_zones                                                          # add dns 
+    #restore_dns_zones
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
-    restore_cron                                                               # cronjob
     restore_ssl "$cyberpanel_username"                                         # ssl certs
     restore_wordpress                                                          # import wp sites to sitemanager
     opencli user-quota $cyberpanel_username                                    # restore quota
