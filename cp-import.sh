@@ -349,7 +349,7 @@ check_if_user_exists(){
     log "Username: $cpanel_username"
 
     local existing_user=""
-    existing_user=$(opencli user-list --json | jq -r ".[] | select(.username == \"$cpanel_username\") | .id")
+	existing_user=$(opencli user-list --json | jq -r '.data[] | select(.username == "'"$cpanel_username"'") | .id')
 
 	if [ -n "$existing_user" ]; then
         log "FATAL ERROR: $cpanel_username already exists."
