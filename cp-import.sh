@@ -84,20 +84,11 @@ command_exists() {
 install_dependencies() {
     log "Checking and installing dependencies..."
     install_needed=false
-    declare -A commands=(
-        ["tar"]="tar"
-        ["unzip"]="unzip"
-        ["jq"]="jq"
-        ["pigz"]="pigz"
-        ["wget"]="wget"
-        ["curl"]="curl"
-    )
+    commands=(tar unzip jq pigz wget curl)
 
-    for cmd in "${!commands[@]}"; do
-        if ! command_exists "$cmd"; then
-            install_needed=true
-            break
-        fi
+    # Check if any command is missing
+    for cmd in "${commands[@]}"; do
+        command_exists "$cmd" || { install_needed=true; break; }
     done
 
     if [ "$install_needed" = true ]; then
@@ -105,32 +96,26 @@ install_dependencies() {
             log "Detected APT package manager. Updating..."
             apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
             apt-get update -y >/dev/null 2>&1
-
-            for cmd in "${!commands[@]}"; do
+            for cmd in "${commands[@]}"; do
                 if ! command_exists "$cmd"; then
-                    log "Installing ${commands[$cmd]} (APT)"
-                    apt-get install -y --no-upgrade --no-install-recommends "${commands[$cmd]}" >/dev/null 2>&1
+                    log "Installing $cmd (APT)"
+                    apt-get install -y --no-upgrade --no-install-recommends "$cmd" >/dev/null 2>&1
                 fi
             done
-
             apt-mark unhold linux-image-generic linux-headers-generic >/dev/null 2>&1
-
         elif command_exists dnf; then
             log "Detected DNF package manager. Updating..."
             dnf -y makecache >/dev/null 2>&1
-
-            for cmd in "${!commands[@]}"; do
+            for cmd in "${commands[@]}"; do
                 if ! command_exists "$cmd"; then
-                    log "Installing ${commands[$cmd]} (DNF)"
-                    dnf install -y "${commands[$cmd]}" >/dev/null 2>&1
+                    log "Installing $cmd (DNF)"
+                    dnf install -y "$cmd" >/dev/null 2>&1
                 fi
             done
-
         else
             log "Error: Unsupported package manager. Please install dependencies manually."
             exit 1
         fi
-
         log "Dependencies installed successfully."
     else
         log "All required dependencies are already installed."
@@ -145,10 +130,7 @@ get_server_ipv4(){
 }
 
 validate_plan_exists(){
-    if ! opencli plan-list --json | grep -qw "$plan_name"; then
-        log "FATAL ERROR: Plan name '$plan_name' does not exist."
-        exit 1
-    fi
+	opencli plan-list --json | grep -qw "$plan_name" || { log "FATAL ERROR: Plan name '$plan_name' does not exist."; exit 1; }
 }
 
 # END HELPER FUNCTIONS
