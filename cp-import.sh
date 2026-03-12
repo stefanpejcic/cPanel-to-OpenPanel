@@ -541,41 +541,37 @@ restore_domains() {
         log "Detected a total of $domains_count domains for user."
 
         current_domain_count=0
-
-	    declare -gA addon_php_selection  # PHP version per domain
-	    declare -gA addon_paths          # path per domain
-	    addon_domains_array=()           # list of addon domains
+		
+		declare -A addon_php_selection  # PHP version per domain
+		declare -A addon_paths          # path per domain
+		addon_domains_array=()           # list of addon domains
+		
+		# Read the metadata file line by line
+		domain=""
+		php_sel=""
+		path=""
 	
-	    # Extract all <domain> blocks inside <ChildDomains>
-	    awk '
-	    /<ChildDomains>/,/<\/ChildDomains>/ {
-	        if ($0 ~ /<domain>/) {
-	            if (match($0, /<domain>([^<]+)<\/domain>/, arr)) {
-	                domain = arr[1]
-	                domains[domain] = 1
-	            }
-	        }
-	        if ($0 ~ /<phpSelection>/ && domain != "") {
-	            if (match($0, /<phpSelection>([^<]+)<\/phpSelection>/, arr)) {
-	                php_sel[domain] = arr[1]
-	            }
-	        }
-	        if ($0 ~ /<path>/ && domain != "") {
-	            if (match($0, /<path>([^<]+)<\/path>/, arr)) {
-	                paths[domain] = arr[1]
-	                domain = ""   # reset domain after finishing block
-	            }
-	        }
-	    }
-	    END {
-	        for (d in domains) {
-	            printf("%s;%s;%s\n", d, php_sel[d], paths[d])
-	        }
-	    }' "$META_FILE" | while IFS=';' read -r domain php path; do
-	        addon_domains_array+=("$domain")
-	        addon_php_selection["$domain"]="$php"
-	        addon_paths["$domain"]="$path"
-	    done
+		while IFS= read -r line; do
+		    case "$line" in
+		        *"<domain>"*)
+		            domain=$(echo "$line" | sed -E 's/.*<domain>([^<]+)<\/domain>.*/\1/')
+		            ;;
+		        *"<phpSelection>"*)
+		            php_sel=$(echo "$line" | sed -E 's/.*<phpSelection>([^<]+)<\/phpSelection>.*/\1/')
+		            ;;
+		        *"<path>"*)
+		            path=$(echo "$line" | sed -E 's/.*<path>([^<]+)<\/path>.*/\1/')
+		            # Store values in arrays
+		            addon_domains_array+=("$domain")
+		            addon_php_selection["$domain"]="$php_sel"
+		            addon_paths["$domain"]="$path"
+		            # Reset variables for next block
+		            domain=""
+		            php_sel=""
+		            path=""
+		            ;;
+		    esac
+		done < "$META_FILE"
 
 
         create_domain(){
