@@ -683,24 +683,18 @@ Currently supported features:
 
 ├─ DOMAINS:
 │  ├─ Primary domain, Addons, Aliases and Subdomains
-│  ├─ SSL certificates
-│  ├─ Domains access logs (Apache domlogs)
-│  └─ DNS zones
+│  └─ SSL certificates
 ├─ WEBSITES:
-│  └─ WordPress instalations from WP Toolkit & Softaculous 
+│  └─ WordPress instalations
 ├─ DATABASES:
-│    ├─ Remote access to MySQL
-│    └─ MySQL databases, users and grants
+│    └─ MySQL databases and users
 ├─ PHP:
-│    └─ Installed version from Cloudlinux PHP Selector
+│    └─ PHP versions per domain
 ├─ FILES
-├─ CRONS
 └─ ACCOUNT
-    ├─ Notification preferences
-    ├─ cPanel account creation date
-    └─ cPanel account password
+    └─ CyberPanel account password
 
-***emails, ftp, nodejs/python, postgres are not yet supported***
+***emails, crons, dns, ftp, nodejs/python, postgres are not yet supported***
 
 --------------------------------------------------------------------
   if you experience any errors with this script, please report to
