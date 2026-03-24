@@ -1112,7 +1112,7 @@ Currently supported features:
 │  ├─ DNS zones
 │  ├─ SSL certificates
 │  ├─ Modsecurity status
-│  └─ Domains access logs (Apache domlogs)
+│  └─ Access logs (Apache domlogs)
 ├─ WEBSITES:
 │  └─ WordPress instalations from WP Toolkit & Softaculous 
 ├─ DATABASES:
