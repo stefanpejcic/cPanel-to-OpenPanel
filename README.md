@@ -24,10 +24,10 @@ Currently suported for import:
 │    └─ Mailboxes (mail files)
 ├─ CRONS
 └─ ACCOUNT
+    ├─ Account Password
     ├─ Notification preferences
-    ├─ cPanel account creation date
-    └─ cPanel account password
-
+    ├─ Creation date
+    └─ Locale (Language)
 ***email forwarders, ftp, nodejs/python, postgres are not yet supported***
 ```
 
