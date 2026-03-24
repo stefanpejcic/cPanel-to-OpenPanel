@@ -466,7 +466,7 @@ restore_psql() {
                 log "Creating database: $db_name (${current_db}/${total_databases})"
 
 				docker --context="$cpanel_username" exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
-				docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "CREATE DATABASE \"$db_name\";"
+				#TODO: test# docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "CREATE DATABASE \"$db_name\";"
 
                 log "Importing tables for database: $db_name"
                 docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "$mysql_type:/tmp/${db_name}.tar" >/dev/null 2>&1		
@@ -485,16 +485,18 @@ restore_psql() {
 
 		# psql_users.sql
 		if [[ -f "$psql_users" && -s "$psql_users" ]]; then
+			log "Importing database users"
 		    while IFS= read -r line || [[ -n "$line" ]]; do
 		        [[ -z "$line" ]] && continue
 		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
 		    done < "$psql_users"
 		else
-		    echo "WARNING: No PostgreSQL GRANTS detected"
+		    echo "WARNING: No PostgreSQL USERS detected"
 		fi
 
         # psql_grants.sql
 		if [[ -f "$psql_grants" && -s "$psql_grants" ]]; then
+			log "Importing database grants"
 		    while IFS= read -r line || [[ -n "$line" ]]; do
 		        [[ -z "$line" ]] && continue
 		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
