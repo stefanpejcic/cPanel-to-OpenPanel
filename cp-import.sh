@@ -439,7 +439,7 @@ restore_psql() {
     log "Restoring PostgreSQL databases for user $cpanel_username"
     dry_run "Would restore PostgreSQL databases for user $cpanel_username" && return
 
-	if [ -d "$psql_dir" ] && [ "$(ls -A "$psql_dir")" ]; then
+	if [ -d "$psql_dir" ]; then
         # STEP 1: Start psql container
         log "Initializing postgres service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d postgres >/dev/null 2>&1
@@ -590,6 +590,10 @@ restore_mysql() {
 
         docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
         docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+
+		# STEP 6: Start phpMyAdmin
+		nohup cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d phpmyadmin >/dev/null 2>&1 &
+		disown
 
     else
         log "No MySQL databases found to restore"
