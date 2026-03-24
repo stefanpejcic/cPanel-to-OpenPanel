@@ -1109,9 +1109,10 @@ Currently supported features:
 
 ├─ DOMAINS:
 │  ├─ Primary domain, Addons, Aliases and Subdomains
+│  ├─ DNS zones
 │  ├─ SSL certificates
-│  ├─ Domains access logs (Apache domlogs)
-│  └─ DNS zones
+│  ├─ Modsecurity status
+│  └─ Domains access logs (Apache domlogs)
 ├─ WEBSITES:
 │  └─ WordPress instalations from WP Toolkit & Softaculous 
 ├─ DATABASES:
