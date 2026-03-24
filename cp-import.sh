@@ -1187,6 +1187,8 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				if [ -d "$base_dir/mail/$domain/$username" ]; then
 				#####rm -rf "$STORE_EMAILS_IN/$domain/$username/" && mv "$base_dir/mail/$domain/$username/" "$STORE_EMAILS_IN/$domain/$username/"
 				#TODO: test!
+				mkdir -p "$STORE_EMAILS_IN/PROBA/$domain/$username/"
+				echo "rsync -av --remove-source-files $base_dir/mail/$domain/$username/. $STORE_EMAILS_IN/$domain/$username/" > /root/komanda.txt
 				rsync -av --remove-source-files "$base_dir/mail/$domain/$username/." "$STORE_EMAILS_IN/$domain/$username/"
 					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/emailtest1/." "/var/mail/stefantestira.rs/emailtest1/"
 				fi
