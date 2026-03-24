@@ -1112,11 +1112,12 @@ Currently supported features:
 ├─ FILES
 ├─ CRONS
 └─ ACCOUNT
+    ├─ Account Password
     ├─ Notification preferences
-    ├─ cPanel account creation date
-    └─ cPanel account password
+    ├─ Creation date
+    └─ Locale (Language)
 
-***emails, ftp, nodejs/python, postgres are not yet supported***
+***ftp, nodejs/python, postgres are not yet supported***
 
 --------------------------------------------------------------------
   if you experience any errors with this script, please report to
