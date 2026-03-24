@@ -779,40 +779,45 @@ restore_domains() {
             type="$2"
 
             current_domain_count=$((current_domain_count + 1))
+
+		    if [[ "$domain" == *.cpanel.site ]]; then
+		        echo "Skipping cPanel temporary domain: $domain"
+		        return 0
+		    fi
+			
             if [[ $domain == \*.* ]]; then
                 log "WARNING: Skipping wildcard domain $domain"
-            else
-                log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
-
-                userdata_file="$real_backup_files_path/userdata/$domain"
-                docroot=""
-                if [ -f "$userdata_file" ]; then
-                    original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
-                    docroot="${original_docroot#/home/$cpanel_username/}"
-                    docroot="/var/www/html/$docroot"
-                else
-                    log "WARNING: userdata file not found for $domain. Using default docroot."
-                fi
-
-                dry_run "Would restore $type $domain with --docroot ${docroot:-N/A}" && return
-                          
-                if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
-                    if [ -n "$docroot" ]; then
-                        output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
-                        while IFS= read -r line; do
-                            log "$line"
-                        done <<< "$output"
-                    else
-                        output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
-                        while IFS= read -r line; do
-                            log "$line"
-                        done <<< "$output"                        
-                    fi
-                else
-                    log "WARNING: $type $domain already exists and will not be added to this user."
-                fi
+				return 0
             fi
+			log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
 
+			userdata_file="$real_backup_files_path/userdata/$domain"
+			docroot=""
+			if [ -f "$userdata_file" ]; then
+				original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
+				docroot="${original_docroot#/home/$cpanel_username/}"
+				docroot="/var/www/html/$docroot"
+			else
+				log "WARNING: userdata file not found for $domain. Using default docroot."
+			fi
+
+			dry_run "Would restore $type $domain with --docroot ${docroot:-N/A}" && return
+					  
+			if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
+				if [ -n "$docroot" ]; then
+					output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
+					while IFS= read -r line; do
+						log "$line"
+					done <<< "$output"
+				else
+					output=$(opencli domains-add "$domain" "$cpanel_username" 2>&1)
+					while IFS= read -r line; do
+						log "$line"
+					done <<< "$output"                        
+				fi
+			else
+				log "WARNING: $type $domain already exists and will not be added to this user."
+			fi
         }
 
         log "Processing main (primary) domain.."
