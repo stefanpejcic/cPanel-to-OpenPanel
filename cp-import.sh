@@ -749,8 +749,8 @@ restore_wordpress() {
 
 # LOCAE
 restore_locale() {
-    if [ -f "$real_backup_files_path/userdata/main" ]; then
-        local file_path="$real_backup_files_path/userdata/main"
+    if [ -f "$real_backup_files_path/cp/$openpanel_username" ]; then
+        local file_path="$real_backup_files_path/cp/$openpanel_username"
     	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
 			log "Setting locale:$locale_code for OpenPanel UI"
@@ -943,7 +943,7 @@ restore_domains() {
 					done <<< "$output"                        
 				fi
 				if [ -f "$real_backup_files_path/userdata/$domain" ]; then
-					local secruleengineoff=$(grep '^secruleengineoff=' "$real_backup_files_path/userdata/main" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+					local secruleengineoff=$(grep '^secruleengineoff=' "$real_backup_files_path/userdata/$domain" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 					if [ "$secruleengineoff" == "1" ]; then
 						log "Disabling WAF because ModSecurity is turned off for this domain in cPanel."
 						output=$(opencli waf domain "$domain" "disable" 2>&1)
@@ -1184,8 +1184,8 @@ import_email_accounts_and_data() {
 	fi
 
 
-    if [ -f "$real_backup_files_path/userdata/main" ]; then
-    	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/userdata/main" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+    if [ -f "$real_backup_files_path/cp/$openpanel_username" ]; then
+    	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/cp/$openpanel_username" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 	    if [ "$mailbox_format" == "maildir" ]; then
 			:
 		elif [ "$mailbox_format" == "mbox" ]; then
