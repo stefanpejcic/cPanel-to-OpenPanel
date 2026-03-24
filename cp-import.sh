@@ -385,17 +385,17 @@ create_new_user() {
     local plan_name="$4"
 
     dry_run "Would create user $username with email $email and plan $plan_name" && return
-        
-    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" --no-sentinel 2>&1)
+
+    create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" --no-sentinel >/dev/null 2>&1)
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
 
-    if echo "$create_user_command" | grep -q "Successfully added user"; then
+	if [ -f "/home/$cpanel_username/docker-compose.yml" ]; then
         shadow_file="$real_backup_files_path/shadow"
         if [ -f "$shadow_file" ]; then
             . /usr/local/opencli/db.sh
-            
+
             hashed_password=$(cat "$shadow_file")
             safe_hashed_password=$(printf "%s" "$hashed_password" | sed "s/'/''/g")
             safe_username=$(printf "%s" "$username" | sed "s/'/''/g")
@@ -408,7 +408,7 @@ create_new_user() {
             fi
         fi       
     else
-        log "FATAL ERROR: User addition failed. Response did not contain the expected success message."
+        log "FATAL ERROR: User addition failed."
         exit 1
     fi
 }
