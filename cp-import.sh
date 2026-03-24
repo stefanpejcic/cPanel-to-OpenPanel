@@ -523,8 +523,17 @@ restore_mysql() {
         fi
     }
 
+	# STEP 1: Enable remote access
+	if [ -f "${real_backup_files_path}/mysql_host_notes.json" ]; then
+		key_count=$(jq 'keys | length' "${real_backup_files_path}/mysql_host_notes.json")
+		if [ "$key_count" -gt 0 ]; then
+			log "'Remote Database Access' has $key_count hosts - enabling remote mysql access"
+			sed -i '/^MYSQL_PORT=/ s/127\.0\.0\.1://g' /home/$cpanel_username/.env
+		fi
+	fi
+
     if [ -d "$mysql_dir" ]; then
-        # STEP 1: Replace old IP and hostname
+        # STEP 2: Replace old IP and hostname
         old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
         log "Replacing old server IP: $old_ip with '%' in database grants"
         sed -i "s/$old_ip/%/g" "$mysql_conf"
@@ -533,7 +542,7 @@ restore_mysql() {
         log "Removing old hostname $old_hostname from database grants"
         sed -i "/$old_hostname/d" "$mysql_conf"
         
-        # STEP 2: Start MySQL container
+        # STEP 3: Start MySQL container
         if [ "$mysql_type" = "mysql" ]; then
             mysql_version="8.0"
             sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
@@ -541,7 +550,7 @@ restore_mysql() {
         log "Initializing $mysql_type service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
-        # STEP 3: Wait for MySQL to be ready (max 300 seconds)
+        # STEP 4: Wait for MySQL to be ready (max 300 seconds)
         log "Waiting for MySQL service to be ready..."
         max_wait=300
         waited=0
@@ -555,7 +564,7 @@ restore_mysql() {
         done
         log "$mysql_type is ready after $waited seconds"
 
-        # STEP 4: Create and import databases
+        # STEP 5: Create and import databases
         total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
         log "Starting import for $total_databases MySQL databases"
         if [ "$total_databases" -gt 0 ]; then
@@ -584,14 +593,15 @@ restore_mysql() {
             log "WARNING: No MySQL databases found"
         fi
 
-        # STEP 5: Import grants
+        # STEP 6: Import grants
         log "Importing database grants"
         python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
 
         docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
         docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
 
-		# STEP 6: Start phpMyAdmin
+		# STEP 7: Start phpMyAdmin
+		log "Starting phpMyAdmin service"
 		nohup cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d phpmyadmin >/dev/null 2>&1 &
 		disown
 
