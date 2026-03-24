@@ -616,6 +616,7 @@ restore_ssl() {
     # apache_tls/ dir has LE certs, custom are in ssl/
     if [ -d "$real_backup_files_path/ssl" ]; then
         dest_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/"
+		shopt -s nullglob
         for cert_file in "$real_backup_files_path/ssl"/*.crt; do
             local domain=$(basename "$cert_file" .crt)
             local key_file="$real_backup_files_path/ssl/$domain.key"
