@@ -14,23 +14,22 @@ Currently suported for import:
 │  ├─ Modsecurity status
 │  └─ Access logs (Apache domlogs)
 ├─ WEBSITES:
-│  └─ WordPress instalations from WPToolkit & Softaculous 
+│  └─ WordPress instalations from WP Toolkit & Softaculous 
 ├─ DATABASES:
-│    ├─ Remote access to MySQL
-│    └─ MySQL databases, users and grants
+│    ├─ MySQL databases, users and grants
+│    ├─ PostgreSQL databases, users and grants
+│    └─ Remote access to MySQL
 ├─ PHP:
 │    └─ Installed version from Cloudlinux PHP Selector
 ├─ FILES
-├─ EMAILS:
-│    ├─ Accounts and passwords
-│    └─ Mailboxes (if MAILBOX_FORMAT=maildir on cpanel)
 ├─ CRONS
 └─ ACCOUNT
     ├─ Account Password
     ├─ Notification preferences
     ├─ Creation date
     └─ Locale (Language)
-***email forwarders, ftp, nodejs/python, postgres are not yet supported***
+
+***ftp accounts and nodejs/python apps are not yet supported***
 ```
 
 
