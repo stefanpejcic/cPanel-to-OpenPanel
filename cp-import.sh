@@ -747,6 +747,20 @@ restore_wordpress() {
         done <<< "$output"    
 }
 
+# LOCAE
+restore_locale() {
+    if [ -f "$real_backup_files_path/userdata/main" ]; then
+        local file_path="$real_backup_files_path/userdata/main"
+    	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
+			log "Setting locale:$locale_code for OpenPanel UI"
+			echo "$locale_code" > /home/$openpanel_username/locale
+		else
+			log "Skipping user locale: '$locale_code' is not available"
+		fi
+	fi
+}
+
 # ======================================================================
 # DOMAINS
 restore_domains() {
@@ -1285,7 +1299,8 @@ main() {
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data "$cpanel_username"                          # import emails, filters, forwarders..
     ftp_accounts_import                                                        # import ftp accounts
-    
+
+	restore_locale                                                             # language
     reload_user_quotas                                                         # refresh du and inodes
     collect_stats                                                              # get cpu and ram usage
     write_import_activity
