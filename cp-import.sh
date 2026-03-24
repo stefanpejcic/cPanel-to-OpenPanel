@@ -648,7 +648,7 @@ restore_ssl() {
 # ======================================================================
 # DNS ZONES
 restore_dns_zones() {
-    log "Restoring DNS zones for user $cpanel_username"
+    log "Restoring DNS zones"
 
     dry_run "Would restore DNS zones for user $cpanel_username" && return
 
@@ -663,8 +663,6 @@ restore_dns_zones() {
 			elif [[ "$zone_name" == *.cpanel.site ]]; then
 			    log "Skipping cPanel temporary domain: $zone_name"
 			    continue
-            else
-                log "Importing DNS zone: $zone_name"
             fi
 
             old_ip=$(grep -oP 'IP=\K[0-9.]+' ${real_backup_files_path}/cp/$cpanel_username)
