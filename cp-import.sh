@@ -433,6 +433,7 @@ restore_php_version() {
 # ======================================================================
 # POSTGRESQL
 restore_psql() {
+	local psql_dir="$1"
     log "Restoring PostgreSQL databases"
     dry_run "Would restore PostgreSQL databases for user $cpanel_username" && return
 
@@ -1330,7 +1331,7 @@ main() {
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
-	#TODO: test restore_psql
+	restore_psql "$psql_dir"                                                   # postgresql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
