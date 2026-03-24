@@ -243,6 +243,12 @@ locate_backup_directories() {
     mysql_conf="$real_backup_files_path/mysql.sql"
 	[[ -f $mysql_conf ]] || log "WARNING: Unable to locate MySQL grants file in the backup"
 
+    psqldir="$real_backup_files_path/psql"
+	[[ -d $psqldir ]] || log "WARNING: Unable to locate PostgreSQL directory in the backup"
+
+    psql_grants="$real_backup_files_path/psql_grants.sql"
+	[[ -f $psql_users ]] || log "WARNING: Unable to locate PostgreSQL grants file in the backup"	
+
     ftp_conf="$real_backup_files_path/proftpdpasswd"
 	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
 
@@ -256,6 +262,8 @@ locate_backup_directories() {
     log "- Home directory:       $homedir"
     log "- MySQL directory:      $mysqldir"
     log "- MySQL grants:         $mysql_conf"
+    log "- PostgreSQL directory: $psqldir"
+    log "- PostgreSQL grants:    $psql_grants"	
     log "- PureFTPD users:       $ftp_conf"
     log "- Domain logs:          $domain_logs"
     log "- cPanel configuration: $cp_file"
@@ -426,13 +434,76 @@ restore_php_version() {
 }
 
 # ======================================================================
+# POSTGRESQL
+restore_psql() {
+    log "Restoring PostgreSQL databases for user $cpanel_username"
+    dry_run "Would restore PostgreSQL databases for user $cpanel_username" && return
+
+	if [ -d "$psql_dir" ] && [ "$(ls -A "$psql_dir")" ]; then
+        # STEP 1: Start psql container
+        log "Initializing postgres service for user"
+        cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d postgres >/dev/null 2>&1
+
+        # STEP 2: Wait for PostgreSQL to be ready (max 300 seconds)
+        log "Waiting for PostgreSQL service to be ready..."
+        max_wait=300
+        waited=0
+		while ! docker --context="$cpanel_username" exec postgres psql -U postgres -d "$postgres" -c "SELECT 1;" >/dev/null 2>&1; do
+            sleep 2
+            waited=$((waited + 2))
+            if [ "$waited" -ge "$max_wait" ]; then
+                log "ERROR: postgres did not become ready after $max_wait seconds - no database or users are imported"
+                return 1
+            fi
+        done
+        log "postgres is ready after $waited seconds"
+
+        # STEP 3: Create and import databases
+        total_databases=$(ls "$psql_dir"/*.tar 2>/dev/null | wc -l)
+        log "Starting import for $total_databases PostgreSQL databases"
+        if [ "$total_databases" -gt 0 ]; then
+            current_db=1
+            for db_file in "$psql_dir"/*.tar; do
+                db_name=$(basename "$db_file" .tar)
+
+                log "Creating database: $db_name (${current_db}/${total_databases})"
+
+				docker --context="$cpanel_username" exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
+				docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "CREATE DATABASE \"$db_name\";"
+
+                log "Importing tables for database: $db_name"
+                docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "$mysql_type:/tmp/${db_name}.tar" >/dev/null 2>&1		
+				docker --context="$cpanel_username" exec postgres bash -c "
+					cd /tmp && \
+					tar -xf /tmp/${db_name}.tar restore.sql && \
+					psql -U postgres -d \"$db_name\" -f restore.sql && \
+					rm restore.sql /tmp/${db_name}.tar
+				"
+                current_db=$((current_db + 1))
+            done
+            log "Finished processing $((current_db - 1)) databases"
+        else
+            log "WARNING: No PostgreSQL databases found"
+        fi
+
+		# psql_users.sql
+
+        # psql_grants.sql
+
+    else
+        log "No PostgreSQL databases found to restore"
+    fi
+
+
+}
+
+# ======================================================================
 # MYSQL
 restore_mysql() {
     local mysql_dir="$1"
     local sandbox_warning_logged=false
 
     log "Restoring MySQL databases for user $cpanel_username"
-
     dry_run "Would restore MySQL databases for user $cpanel_username" && return
 
     # Workaround for MariaDB sandbox mode bug
@@ -478,8 +549,8 @@ restore_mysql() {
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
-                log "ERROR: $mysql_type did not become ready after $max_wait seconds"
-                exit 1
+                log "ERROR: $mysql_type did not become ready after $max_wait seconds - no database or users are imported"
+                return 1
             fi
         done
         log "$mysql_type is ready after $waited seconds"
@@ -1106,6 +1177,7 @@ main() {
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
+	#TODO: test restore_psql
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
