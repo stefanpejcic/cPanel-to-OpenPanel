@@ -929,7 +929,7 @@ restore_domains() {
 			fi
 
 			dry_run "Would restore $type $domain with --docroot ${docroot:-N/A}" && return
-					  
+
 			if opencli domains-whoowns "$domain" | grep -q "not found in the database."; then
 				if [ -n "$docroot" ]; then
 					output=$(opencli domains-add "$domain" "$cpanel_username" --docroot "$docroot" 2>&1)
@@ -941,6 +941,16 @@ restore_domains() {
 					while IFS= read -r line; do
 						log "$line"
 					done <<< "$output"                        
+				fi
+				if [ -f "$real_backup_files_path/userdata/$domain" ]; then
+					local secruleengineoff=$(grep '^secruleengineoff=' "$real_backup_files_path/userdata/main" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+					if [ "$secruleengineoff" == "1" ]; then
+						log "Disabling WAF because ModSecurity is turned off for this domain in cPanel."
+						output=$(opencli waf domain "$domain" "disable" 2>&1)
+						while IFS= read -r line; do
+							log "$line"
+						done <<< "$output"
+					fi
 				fi
 			else
 				log "WARNING: $type $domain already exists and will not be added to this user."
@@ -1144,9 +1154,9 @@ ftp_accounts_import() {
     fi
 }
 
+
 # ======================================================================
 # EMAILS
-
 import_email_accounts_and_data() {
     local cpanel_username="$1"
 
