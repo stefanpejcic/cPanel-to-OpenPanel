@@ -9,8 +9,10 @@ Currently suported for import:
 ```
 ├─ DOMAINS:
 │  ├─ Primary domain, Addons, Aliases and Subdomains
+│  ├─ DNS zones
 │  ├─ SSL certificates
-│  └─ DNS zones
+│  ├─ Modsecurity status
+│  └─ Access logs (Apache domlogs)
 ├─ WEBSITES:
 │  └─ WordPress instalations from WPToolkit & Softaculous 
 ├─ DATABASES:
