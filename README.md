@@ -19,13 +19,16 @@ Currently suported for import:
 ├─ PHP:
 │    └─ Installed version from Cloudlinux PHP Selector
 ├─ FILES
+├─ EMAILS:
+│    ├─ Accounts and passwords
+│    └─ Mailboxes (mail files)
 ├─ CRONS
 └─ ACCOUNT
     ├─ Notification preferences
     ├─ cPanel account creation date
     └─ cPanel account password
 
-***emails, ftp, nodejs/python, postgres are not yet supported***
+***email forwarders, ftp, nodejs/python, postgres are not yet supported***
 ```
 
 
