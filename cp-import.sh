@@ -271,12 +271,6 @@ locate_backup_directories() {
 
 get_mariadb_or_mysql_for_user() {
     mysql_type=$(grep '^MYSQL_TYPE=' /home/$cpanel_username/.env | cut -d '=' -f2 | tr -d '"')
-
-    if [[ "$mysql_type" != "mariadb" && "$mysql_type" != "mysql" ]]; then
-        echo "Unsupported MYSQL_TYPE: $mysql_type"
-        exit 1
-    fi
-
 }
 
 reload_user_quotas() {
@@ -665,6 +659,9 @@ restore_dns_zones() {
             if [ ! -f "/etc/bind/zones/${zone_name}.zone" ]; then
                 log "DNS zone file /etc/bind/zones/${zone_name}.zone does not exist. Skipping import for $zone_name."
                 continue
+			elif [[ "$zone_name" == *.cpanel.site ]]; then
+			    log "Skipping cPanel temporary domain: $zone_name"
+			    continue
             else
                 log "Importing DNS zone: $zone_name"
             fi
@@ -870,7 +867,7 @@ restore_domains() {
             current_domain_count=$((current_domain_count + 1))
 
 		    if [[ "$domain" == *.cpanel.site ]]; then
-		        echo "Skipping cPanel temporary domain: $domain"
+		        log "Skipping cPanel temporary domain: $domain"
 		        return 0
 		    fi
 			
@@ -1117,7 +1114,7 @@ import_email_accounts_and_data() {
 
 	postfix_file="/usr/local/mail/openmail/docker-data/dms/config/postfix-accounts.cf"
 	if [ -f "$postfix_file" ]; then
-		echo "WARNING: Skipping email imports due to mailserver not configured."
+		log "WARNING: Skipping email imports due to mailserver not configured."
 		return 0
 	fi
 
@@ -1143,7 +1140,7 @@ import_email_accounts_and_data() {
 				while IFS=: read -r username password_hash rest; do
 				    [[ -z "$username" || -z "$password_hash" ]] && continue
 				    email="${username}@${domain}"
-				    echo "Importing mailbox: $email"
+				    log "Importing mailbox: $email"
 				    opencli email-setup email add "$email" tempPassword123 >/dev/null 2>&1
 					# openpanel format:
 					# emailtest@openpanel.org|{SHA512-CRYPT}$6$yspsXbUo.nkxXIs6$4x.rqdVe8dGaLWKZhlbmO5xFEgverG/ESS8.Cz3w9qH1GP6coXu7qs1CBFSE1co6cYHuVIqFS9bJR0PUcH3EZ0
@@ -1162,10 +1159,10 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				    mv "$base_dir/mail/$domain/$username" "$STORE_EMAILS_IN/$domain/$username"
 				fi
 	        else
-	            echo "Skipping $domain: not owned by user $cpanel_username."
+	            log "Skipping $domain: not owned by user $cpanel_username."
 	        fi
 	    else
-	        echo "Skipping $dir_path (shadow file missing or empty)"
+	        log "Skipping $dir_path (shadow file missing or empty)"
 	    fi
     done
 }
