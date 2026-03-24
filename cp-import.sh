@@ -521,7 +521,7 @@ restore_mysql() {
 	if [ -f "${real_backup_files_path}/mysql_host_notes.json" ]; then
 		key_count=$(jq 'keys | length' "${real_backup_files_path}/mysql_host_notes.json")
 		if [ "$key_count" -gt 0 ]; then
-			log "'Remote Database Access' has $key_count hosts - enabling remote mysql access"
+			log "Enabling remote MySSQL access ($key_count hosts detected)"
 			sed -i '/^MYSQL_PORT=/ s/127\.0\.0\.1://g' /home/$cpanel_username/.env
 		fi
 	fi
