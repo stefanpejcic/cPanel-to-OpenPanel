@@ -760,7 +760,8 @@ restore_domains() {
             if [[ "$line" =~ ^main_domain: ]]; then
                 main_domain=$(echo "$line" | awk '{print $2}')
             elif [[ "$line" =~ ^parked_domains: ]]; then
-                parked_domains=$(echo "$line" | awk '{print $2}' | tr -d '[]')
+                parked_domains_section=true
+				continue
             elif [[ "$line" =~ ^sub_domains: ]]; then
                 sub_domains_section=true
                 continue
@@ -777,6 +778,14 @@ restore_domains() {
                 fi
             fi
 
+            if [[ "$parked_domains_section" == true ]]; then
+                if [[ "$line" =~ ^[[:space:]]+- ]]; then
+                    parked_domains+=$(echo "$line" | awk '{print $2}')$'\n'
+                else
+                    parked_domains_section=false
+                fi
+            fi
+
             if [[ "$addon_domains_section" == true ]]; then
                 if [[ "$line" =~ ^[[:space:]]*[^:]+:[[:space:]]*[^[:space:]]+$ ]]; then
                     domain=$(echo "$line" | awk -F: '{print $1}' | tr -d '[:space:]')
@@ -788,13 +797,6 @@ restore_domains() {
                 fi
             fi
         done < "$file_path"
-
-        # Parse parked_domains
-        if [[ -z "$parked_domains" ]]; then
-            parked_domains_array=()
-        else
-            IFS=',' read -r -a parked_domains_array <<< "$parked_domains"
-        fi
 
         sub_domains_array=()
         addon_domains_array=()
@@ -812,6 +814,13 @@ restore_domains() {
                 addon_domains_array+=("$domain")
             fi
         done <<< "$addon_domains"
+
+        # Parse parked_domains
+        while IFS= read -r domain; do
+            if [[ -n "$domain" ]]; then
+                parked_domains_array+=("$domain")
+            fi
+        done <<< "$parked_domains"
 
         # Filter out subdomains that are essentially addon_domain.$main_domain
         filtered_sub_domains=()
