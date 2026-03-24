@@ -1332,7 +1332,7 @@ main() {
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
-	restore_psql "$psql_dir"                                                   # postgresql databases, users and grants
+	restore_psql "$psqldir"                                                    # postgresql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
