@@ -430,7 +430,7 @@ restore_php_version() {
 # ======================================================================
 # POSTGRESQL
 restore_psql() {
-    log "Restoring PostgreSQL databases for user $cpanel_username"
+    log "Restoring PostgreSQL databases"
     dry_run "Would restore PostgreSQL databases for user $cpanel_username" && return
 
 	if [ -d "$psql_dir" ]; then
@@ -497,7 +497,7 @@ restore_mysql() {
     local mysql_dir="$1"
     local sandbox_warning_logged=false
 
-    log "Restoring MySQL databases for user $cpanel_username"
+    log "Restoring MySQL databases"
     dry_run "Would restore MySQL databases for user $cpanel_username" && return
 
     # Workaround for MariaDB sandbox mode bug
@@ -612,7 +612,7 @@ restore_ssl() {
     dry_run "Would restore SSL certificates for user $username" && return
 
     # TODO: edit to cover certs/ keys/ 
-    log "Restoring SSL certificates for user $username"
+    log "Restoring SSL certificates"
     # apache_tls/ dir has LE certs, custom are in ssl/
     if [ -d "$real_backup_files_path/ssl" ]; then
         dest_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/"
@@ -973,7 +973,7 @@ restore_domains() {
 # ======================================================================
 # CRONJOB
 restore_cron() {
-    log "Restoring cron jobs for user $cpanel_username"
+    log "Restoring cron jobs"
     
     dry_run "Would restore cron jobs for user $cpanel_username" && return
 
@@ -1134,7 +1134,7 @@ ftp_accounts_import() {
 import_email_accounts_and_data() {
     local cpanel_username="$1"
 
-    log "Restoring email accounts and mailboxes for user $cpanel_username"
+    log "Restoring email accounts and mailboxes"
 
     local base_dir="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/etc"
 	
