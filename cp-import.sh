@@ -1129,7 +1129,7 @@ import_email_accounts_and_data() {
 	dry_run "Would restore email accounts from $base_dir" && return
 
 	postfix_file="/usr/local/mail/openmail/docker-data/dms/config/postfix-accounts.cf"
-	if [ -f "$postfix_file" ]; then
+	if [ ! -f "$postfix_file" ]; then
 		log "WARNING: Skipping email imports due to mailserver not configured."
 		return 0
 	fi
