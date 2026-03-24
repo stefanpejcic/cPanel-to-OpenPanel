@@ -1186,6 +1186,7 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 				if [ -d "$base_dir/mail/$domain/$username" ]; then
 					rsync -av --remove-source-files "$base_dir/mail/$domain/$username/." "$STORE_EMAILS_IN/$domain/$username/"
+					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/emailtest1/." "/var/mail/stefantestira.rs/emailtest1/"
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
