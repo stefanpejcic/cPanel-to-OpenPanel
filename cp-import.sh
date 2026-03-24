@@ -1172,6 +1172,20 @@ import_email_accounts_and_data() {
 		STORE_EMAILS_IN="domain"
 	fi
 
+
+    if [ -f "$real_backup_files_path/userdata/main" ]; then
+    	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/userdata/main" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+	    if [ "$mailbox_format" == "maildir" ]; then
+			:
+		elif [ "$mailbox_format" == "mbox" ]; then
+			log "WARNING: Emails will not be imported because the cPanel account uses 'mbox' format, while OpenPanel uses 'maildir'. Emails remain available in /var/www/html/mail/."
+		else
+			log "WARNING: Emails will not be imported because the mailbox format could not be detected. Emails remain available in /var/www/html/mail/."
+		fi
+	fi
+
+
+
 	# Loop through each folder in the base dir
     for dir_path in "$base_dir"/*/; do
 	    shadow_file="$dir_path/shadow"
@@ -1179,15 +1193,13 @@ import_email_accounts_and_data() {
 	        domain=$(basename "$dir_path")
 	        owner=$(opencli domains-whoowns "$domain" | awk -F': ' '{print $2}')
 	        if [[ "$owner" == "$cpanel_username" ]]; then
-				# cpanel format:
-				# emailtest:$6$7XrOu5w5Iou8b1wj$dHcNUF0017EMLtue2X/nM2AlEoU8OS5TkyCR9QDEG8FcUOePTASdbDRhsU6ImxbGGiL7OdpJkNksWYqlvNSam/:20536::::::
+				# cpanel format: emailtest:$6$7XrOu5w5Iou8b1wj$dHcNUF0017EMLtue2X/nM2AlEoU8OS5TkyCR9QDEG8FcUOePTASdbDRhsU6ImxbGGiL7OdpJkNksWYqlvNSam/:20536::::::
 				while IFS=: read -r username password_hash rest; do
 				    [[ -z "$username" || -z "$password_hash" ]] && continue
 				    email="${username}@${domain}"
 				    log "Importing mailbox: $email"
 				    opencli email-setup email add "$email" tempPassword123 >/dev/null 2>&1
-					# openpanel format:
-					# emailtest@openpanel.org|{SHA512-CRYPT}$6$yspsXbUo.nkxXIs6$4x.rqdVe8dGaLWKZhlbmO5xFEgverG/ESS8.Cz3w9qH1GP6coXu7qs1CBFSE1co6cYHuVIqFS9bJR0PUcH3EZ0
+					# openpanel format: emailtest@openpanel.org|{SHA512-CRYPT}$6$yspsXbUo.nkxXIs6$4x.rqdVe8dGaLWKZhlbmO5xFEgverG/ESS8.Cz3w9qH1GP6coXu7qs1CBFSE1co6cYHuVIqFS9bJR0PUcH3EZ0
 					sed -i.bak "/^${email}|/c\\
 ${email}|{SHA512-CRYPT}${password_hash}
 " "$postfix_file"
@@ -1195,16 +1207,17 @@ ${email}|{SHA512-CRYPT}${password_hash}
 
 				# 2. move mails
 				# openpanel storage: $STORE_EMAILS_IN/stefantestira.rs/emailtest2 OR /home/stefan/mail/stefantestira.rs/emailtest2
-				if [ "$STORE_EMAILS_IN" == "domain" ]; then
-				    STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
-				fi
-				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
-				if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
-					log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
-					rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$STORE_EMAILS_IN/$domain/"
-					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/." "/var/mail/stefantestira.rs/"
-				else
-					log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
+				if [ "$mailbox_format" == "maildir" ]; then
+					if [ "$STORE_EMAILS_IN" == "domain" ]; then
+					    STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
+					fi
+					# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
+					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
+						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
+						rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$STORE_EMAILS_IN/$domain/"
+					else
+						log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
+					fi
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
