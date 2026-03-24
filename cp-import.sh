@@ -18,6 +18,9 @@ usage() {
 }
 
 log() {
+    if [[ -z "${1// /}" ]]; then
+        return
+    fi
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     echo "[$timestamp] $1" | tee -a "$LOG_FILE"
 }
