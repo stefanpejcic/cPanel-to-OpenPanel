@@ -57,7 +57,13 @@ define_data_and_log(){
 
     for arg in "$@"; do
         case $arg in
-            --backup-location=*) backup_location="${arg#*=}" ;;
+            --backup-location=*)
+	            backup_location="${arg#*=}"
+	            backup_location="${backup_location%\"}"
+	            backup_location="${backup_location#\"}"
+	            backup_location="${backup_location%\'}"
+	            backup_location="${backup_location#\'}"
+			;;
             --plan-name=*)       plan_name="${arg#*=}" ;;
             --dry-run)           DRY_RUN=true ;;
             --post-hook=*)       post_hook="${arg#*=}" ;;
