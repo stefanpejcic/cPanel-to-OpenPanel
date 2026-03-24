@@ -419,7 +419,7 @@ restore_php_version() {
         log "PHP version is set to inherit. No changes will be made."
     else
         # cPanel custom version
-        log "Setting PHP $php_version as the default version for all new domains."
+        #log "Setting PHP $php_version as the default version for all new domains."
         output=$(opencli php-default "$cpanel_username" --update "$php_version" 2>&1)
         while IFS= read -r line; do
             log "$line"
