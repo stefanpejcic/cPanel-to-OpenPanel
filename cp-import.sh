@@ -1156,7 +1156,9 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				fi
 				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 				if [ -d "$base_dir/mail/$domain/$username" ]; then
-				    mv "$base_dir/mail/$domain/$username" "$STORE_EMAILS_IN/$domain/$username"
+					shopt -s dotglob
+					mv "$base_dir/mail/$domain/$username/*" "$STORE_EMAILS_IN/$domain/$username/"
+					shopt -u dotglob					
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
