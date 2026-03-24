@@ -348,7 +348,6 @@ parse_cpanel_metadata() {
     cpanel_email="${cpanel_email:-admin@$main_domain}"
     php_version="${php_version:-inherit}"
 
-    log "Main Domain:          ${main_domain:-Not found}"
     log "Email:                ${cpanel_email:-Not found}"
     log "PHP Version:          $php_version"
     log "Finished parsing cPanel metadata."
@@ -882,7 +881,9 @@ restore_domains() {
             fi
         done
 
-        main_domain_count=1
+		main_domain_count=1
+		log "Primary domain ($main_domain_count): $main_domain"
+
         addon_domains_count=${#addon_domains_array[@]}
         if [ "${#addon_domains_array[@]}" -eq 1 ] && [ -z "${addon_domains_array[0]}" ]; then
             addon_domains_count=0
@@ -910,7 +911,7 @@ restore_domains() {
 
         domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
 
-        log "Detected a total of $domains_total_count"
+        log "Detected a total of $domains_total_count domains"
 
         current_domain_count=0
 
