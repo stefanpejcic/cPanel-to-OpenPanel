@@ -92,7 +92,7 @@ command_exists() {
 install_dependencies() {
     log "Checking and installing dependencies..."
     install_needed=false
-    commands=(tar unzip jq pigz wget curl)
+    commands=(tar unzip jq pigz wget curl rsync)
 
     for cmd in "${commands[@]}"; do
         command_exists "$cmd" || { install_needed=true; break; }
@@ -1156,7 +1156,7 @@ import_email_accounts_and_data() {
 		STORE_EMAILS_IN="domain"
 	fi
 
-    # Loop through each folder in the base dir
+	# Loop through each folder in the base dir
     for dir_path in "$base_dir"/*/; do
 	    shadow_file="$dir_path/shadow"
 	    if [[ -f "$shadow_file" && -s "$shadow_file" ]]; then
@@ -1184,9 +1184,7 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				fi
 				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 				if [ -d "$base_dir/mail/$domain/$username" ]; then
-					shopt -s dotglob
-					mv "$base_dir/mail/$domain/$username/*" "$STORE_EMAILS_IN/$domain/$username/"
-					shopt -u dotglob					
+					rsync -av --remove-source-files "$base_dir/mail/$domain/$username/" "$STORE_EMAILS_IN/$domain/$username/"
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
@@ -1195,6 +1193,7 @@ ${email}|{SHA512-CRYPT}${password_hash}
 	        log "Skipping $dir_path (shadow file missing or empty)"
 	    fi
     done
+	find "$base_dir/" -type d -empty -delete
 }
 
 
