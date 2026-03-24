@@ -247,13 +247,9 @@ locate_backup_directories() {
 	[[ -f $mysql_conf ]] || log "WARNING: Unable to locate MySQL grants file in the backup"
 
     psqldir="$real_backup_files_path/psql"
-	[[ -d $psqldir ]] || log "WARNING: Unable to locate PostgreSQL directory in the backup"
-
     psql_grants="$real_backup_files_path/psql_grants.sql"
-	[[ -f $psql_grants ]] || log "WARNING: Unable to locate PostgreSQL grants file in the backup"	
-
+    psql_users="$real_backup_files_path/psql_users.sql"
     ftp_conf="$real_backup_files_path/proftpdpasswd"
-	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
 
     domain_logs="$real_backup_files_path/logs/"
 	[[ -d $domain_logs ]] || log "WARNING: Unable to locate apache domlogs in the backup"
@@ -265,9 +261,10 @@ locate_backup_directories() {
     log "- Home directory:       $homedir"
     log "- MySQL directory:      $mysqldir"
     log "- MySQL grants:         $mysql_conf"
-    log "- PostgreSQL directory: $psqldir"
-    log "- PostgreSQL grants:    $psql_grants"	
-    log "- PureFTPD users:       $ftp_conf"
+    [[ -d $psqldir ]] && log "- PostgreSQL directory: $psqldir"
+	[[ -f $psql_grants ]] && log "- PostgreSQL grants:    $psql_grants"
+	[[ -f $psql_users ]] && log "- PostgreSQL users:     $psql_users"
+	[[ -f $ftp_conf ]] && log "- PureFTPD users:       $ftp_conf"
     log "- Domain logs:          $domain_logs"
     log "- cPanel configuration: $cp_file"
 }
@@ -487,8 +484,24 @@ restore_psql() {
         fi
 
 		# psql_users.sql
+		if [[ -f "$psql_users" && -s "$psql_users" ]]; then
+		    while IFS= read -r line || [[ -n "$line" ]]; do
+		        [[ -z "$line" ]] && continue
+		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
+		    done < "$psql_users"
+		else
+		    echo "WARNING: No PostgreSQL GRANTS detected"
+		fi
 
         # psql_grants.sql
+		if [[ -f "$psql_grants" && -s "$psql_grants" ]]; then
+		    while IFS= read -r line || [[ -n "$line" ]]; do
+		        [[ -z "$line" ]] && continue
+		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
+		    done < "$psql_grants"
+		else
+		    echo "WARNING: No PostgreSQL GRANTS detected"
+		fi
 
     else
         log "No PostgreSQL databases found to restore"
@@ -1119,8 +1132,9 @@ Currently supported features:
 ├─ WEBSITES:
 │  └─ WordPress instalations from WP Toolkit & Softaculous 
 ├─ DATABASES:
-│    ├─ Remote access to MySQL
-│    └─ MySQL databases, users and grants
+│    ├─ MySQL databases, users and grants
+│    ├─ PostgreSQL databases, users and grants
+│    └─ Remote access to MySQL
 ├─ PHP:
 │    └─ Installed version from Cloudlinux PHP Selector
 ├─ FILES
@@ -1131,7 +1145,7 @@ Currently supported features:
     ├─ Creation date
     └─ Locale (Language)
 
-***ftp, nodejs/python, postgres are not yet supported***
+***ftp accounts and nodejs/python apps are not yet supported***
 
 --------------------------------------------------------------------
   if you experience any errors with this script, please report to
