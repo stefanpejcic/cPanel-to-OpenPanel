@@ -877,12 +877,16 @@ restore_domains() {
             fi
 			log "Restoring $type $domain (${current_domain_count}/${domains_total_count})"
 
-			userdata_file="$real_backup_files_path/userdata/$domain"
+			local userdata_file="$real_backup_files_path/userdata/$domain"
+			local addon_userdata_file="$real_backup_files_path/userdata/$domain.$main_domain"
+			file_to_use="$userdata_file"
+			[ ! -f "$file_to_use" ] && [ -f "$addon_userdata_file" ] && file_to_use="$addon_userdata_file"
+			
 			docroot=""
-			if [ -f "$userdata_file" ]; then
-				original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$userdata_file" | xargs)
-				docroot="${original_docroot#/home/$cpanel_username/}"
-				docroot="/var/www/html/$docroot"
+			if [ -f "$file_to_use" ]; then
+				original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$file_to_use" | xargs)
+			    docroot="${original_docroot#/home/$cpanel_username/}"
+			    docroot="/var/www/html/$docroot"
 			else
 				log "WARNING: userdata file not found for $domain. Using default docroot."
 			fi
