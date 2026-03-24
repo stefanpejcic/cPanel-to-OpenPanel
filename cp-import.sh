@@ -1185,9 +1185,9 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				fi
 				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 				if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
-					log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/$username/"
-					rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username/." "$STORE_EMAILS_IN/$domain/$username/"
-					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/emailtest1/." "/var/mail/stefantestira.rs/emailtest1/"
+					log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
+					rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$STORE_EMAILS_IN/$domain/"
+					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/." "/var/mail/stefantestira.rs/"
 				else
 					log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
 				fi
