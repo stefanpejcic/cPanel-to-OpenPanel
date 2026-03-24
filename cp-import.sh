@@ -243,7 +243,7 @@ locate_backup_directories() {
     mysql_conf="$real_backup_files_path/mysql.sql"
 	[[ -f $mysql_conf ]] || log "WARNING: Unable to locate MySQL grants file in the backup"
 
-    ftp_conf="$real_backup_files_path/proftpdpassword"
+    ftp_conf="$real_backup_files_path/proftpdpasswd"
 	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
 
     domain_logs="$real_backup_files_path/logs/"
