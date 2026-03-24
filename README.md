@@ -21,7 +21,7 @@ Currently suported for import:
 ├─ FILES
 ├─ EMAILS:
 │    ├─ Accounts and passwords
-│    └─ Mailboxes (mail files)
+│    └─ Mailboxes (if MAILBOX_FORMAT=maildir on cpanel)
 ├─ CRONS
 └─ ACCOUNT
     ├─ Account Password
