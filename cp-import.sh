@@ -247,7 +247,7 @@ locate_backup_directories() {
 	[[ -d $psqldir ]] || log "WARNING: Unable to locate PostgreSQL directory in the backup"
 
     psql_grants="$real_backup_files_path/psql_grants.sql"
-	[[ -f $psql_users ]] || log "WARNING: Unable to locate PostgreSQL grants file in the backup"	
+	[[ -f $psql_grants ]] || log "WARNING: Unable to locate PostgreSQL grants file in the backup"	
 
     ftp_conf="$real_backup_files_path/proftpdpasswd"
 	[[ -f $ftp_conf ]] || log "WARNING: Unable to locate ProFTPD users file in the backup"
