@@ -55,21 +55,24 @@ define_data_and_log(){
     plan_name=""
     DRY_RUN=false
 
-    for arg in "$@"; do
-        case $arg in
-            --backup-location=*)
-	            backup_location="${arg#*=}"
-	            backup_location="${backup_location%\"}"
-	            backup_location="${backup_location#\"}"
-	            backup_location="${backup_location%\'}"
-	            backup_location="${backup_location#\'}"
-			;;
-            --plan-name=*)       plan_name="${arg#*=}" ;;
-            --dry-run)           DRY_RUN=true ;;
-            --post-hook=*)       post_hook="${arg#*=}" ;;
-            *)                   usage ;;
-        esac
-    done
+	strip_quotes() {
+	    local str="$1"
+	    str="${str%\"}"  # remove trailing double quote
+	    str="${str#\"}"  # remove leading double quote
+	    str="${str%\'}"  # remove trailing single quote
+	    str="${str#\'}"  # remove leading single quote
+	    echo "$str"
+	}
+	
+	for arg in "$@"; do
+	    case $arg in
+	        --backup-location=*) backup_location=$(strip_quotes "${arg#*=}") ;;
+	        --plan-name=*)       plan_name=$(strip_quotes "${arg#*=}") ;;
+	        --post-hook=*)       post_hook=$(strip_quotes "${arg#*=}") ;;
+	        --dry-run)           DRY_RUN=true ;;
+	        *)                   usage ;;
+	    esac
+	done
 
 	[[ -z "$backup_location" || -z "$plan_name" ]] && usage
 
