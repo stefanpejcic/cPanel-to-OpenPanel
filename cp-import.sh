@@ -312,6 +312,9 @@ parse_cpanel_metadata() {
             fi
         }
 
+		# TODO: reuse for webhook_url in openpanel
+        PUSHBULLET_ACCESS_TOKEN=$(get_cp_value "PUSHBULLET_ACCESS_TOKEN" "")
+
         main_domain=$(get_cp_value "DNS" "")
         cpanel_email=$(get_cp_value "CONTACTEMAIL" "")
         [ -z "$cpanel_email" ] && cpanel_email=$(get_cp_value "CONTACTEMAIL2" "")
