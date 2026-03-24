@@ -878,7 +878,7 @@ restore_domains() {
 
         domains_total_count=$((main_domain_count + addon_domains_count + parked_domains_count + filtered_sub_domains_count))
 
-        log "Detected a total of $domains_total_count domains for user."
+        log "Detected a total of $domains_total_count"
 
         current_domain_count=0
 
