@@ -442,14 +442,14 @@ restore_psql() {
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d postgres >/dev/null 2>&1
 
         # STEP 2: Wait for PostgreSQL to be ready (max 300 seconds)
-        log "Waiting for PostgreSQL service to be ready..."
-        max_wait=300
+		local max_wait=300
+        log "Waiting for PostgreSQL service to start... (max {$max_wait}s)"		
         waited=0
 		while ! docker --context="$cpanel_username" exec postgres psql -U postgres -d "$postgres" -c "SELECT 1;" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
-                log "ERROR: postgres did not become ready after $max_wait seconds - no database or users are imported"
+                log "ERROR: postgres did not respond to 'SELECT 1' after $max_wait seconds - no database or users are imported"			
                 return 1
             fi
         done
@@ -566,14 +566,14 @@ restore_mysql() {
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
         # STEP 4: Wait for MySQL to be ready (max 300 seconds)
-        log "Waiting for MySQL service to be ready..."
-        max_wait=300
+		local max_wait=300
+        log "Waiting for MySQL service to start... (max {$max_wait}s)"
         waited=0
         while ! docker --context="$cpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
-                log "ERROR: $mysql_type did not become ready after $max_wait seconds - no database or users are imported"
+                log "ERROR: $mysql_type did not respond to 'SELECT 1' after $max_wait seconds - no database or users are imported"
                 return 1
             fi
         done
