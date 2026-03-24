@@ -1107,16 +1107,69 @@ ftp_accounts_import() {
 
 # ======================================================================
 # EMAILS
-import_email_accounts_and_data() {
-        log "WARNING: Importing Email accounts is not yet supported"
 
-        # TODO:
-        # - check setting from openamdin where mails are stored
-        # for each email check domain owner is the new user
-        # mv email data to domain based dir
-        # mv messages to domain based dir
-        # list emails for user to confirm import
+import_email_accounts_and_data() {
+    local cpanel_username="$1"
+    local base_dir="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/etc"
+
+    #echo "WARNING: Importing Email accounts is not yet fully supported."
+	#return 1
+
+	postfix_file="/usr/local/mail/openmail/docker-data/dms/config/postfix-accounts.cf"
+	if [ -f "$postfix_file" ]; then
+		echo "WARNING: Skipping email imports due to mailserver not configured."
+		return 0
+	fi
+
+	# 1: check where openadmin is configured to store mail data
+	STORE_EMAILS_IN=$(grep -E '^email_storage_location=' /etc/openpanel/openadmin/config/admin.ini | cut -d'=' -f2- | xargs)
+
+	if [[ "$STORE_EMAILS_IN" == /* ]]; then
+		: # keep as is
+	#elif [[ "$STORE_EMAILS_IN" == "user_dir" ]]; then
+	else # TODO: this is a fallback for <1.7.3
+		STORE_EMAILS_IN="domain"
+	fi
+
+    # Loop through each folder in the base dir
+    for dir_path in "$base_dir"/*/; do
+	    shadow_file="$dir_path/shadow"
+	    if [[ -f "$shadow_file" && -s "$shadow_file" ]]; then
+	        domain=$(basename "$dir_path")
+	        owner=$(opencli domains-whoowns "$domain" | awk -F': ' '{print $2}')
+	        if [[ "$owner" == "$cpanel_username" ]]; then
+				# cpanel format:
+				# emailtest:$6$7XrOu5w5Iou8b1wj$dHcNUF0017EMLtue2X/nM2AlEoU8OS5TkyCR9QDEG8FcUOePTASdbDRhsU6ImxbGGiL7OdpJkNksWYqlvNSam/:20536::::::
+				while IFS=: read -r username password_hash rest; do
+				    [[ -z "$username" || -z "$password_hash" ]] && continue
+				    email="${username}@${domain}"
+				    echo "Importing mailbox: $email"
+				    opencli email-setup email add "$email" tempPassword123 >/dev/null 2>&1
+					# openpanel format:
+					# emailtest@openpanel.org|{SHA512-CRYPT}$6$yspsXbUo.nkxXIs6$4x.rqdVe8dGaLWKZhlbmO5xFEgverG/ESS8.Cz3w9qH1GP6coXu7qs1CBFSE1co6cYHuVIqFS9bJR0PUcH3EZ0
+					sed -i.bak "/^${email}|/c\\
+${email}|{SHA512-CRYPT}${password_hash}
+" "$postfix_file"
+				done < "$shadow_file"
+
+				# 2. move mails
+				# openpanel storage: $STORE_EMAILS_IN/stefantestira.rs/emailtest2 OR /home/stefan/mail/stefantestira.rs/emailtest2
+				if [ "$STORE_EMAILS_IN" == "domain" ]; then
+				    STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
+				fi
+				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
+				if [ -d "$base_dir/mail/$domain/$username" ]; then
+				    mv "$base_dir/mail/$domain/$username" "$STORE_EMAILS_IN/$domain/$username"
+				fi
+	        else
+	            echo "Skipping $domain: not owned by user $cpanel_username."
+	        fi
+	    else
+	        echo "Skipping $dir_path (shadow file missing or empty)"
+	    fi
+    done
 }
+
 
 # ======================================================================
 # CREATED DATE IN OPENADMIN FROM WHM
@@ -1200,7 +1253,7 @@ main() {
     opencli user-quota $cpanel_username                                        # restore quota
 
     # STEP 4. IMPORT ENTERPRISE FEATURES
-    import_email_accounts_and_data                                             # import emails, filters, forwarders..
+    import_email_accounts_and_data "$cpanel_username"                          # import emails, filters, forwarders..
     ftp_accounts_import                                                        # import ftp accounts
     
     reload_user_quotas                                                         # refresh du and inodes
