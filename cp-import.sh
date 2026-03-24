@@ -1245,7 +1245,7 @@ main() {
     setquota -u $cpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
     get_mariadb_or_mysql_for_user                                              # mysql or mariadb
-    fix_perms                                                                  # fix permissions for all files
+    #NOT NEEDED ON CPANEL #fix_perms                                           # fix permissions for all files
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
