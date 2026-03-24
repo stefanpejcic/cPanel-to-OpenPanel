@@ -464,18 +464,11 @@ restore_psql() {
                 db_name=$(basename "$db_file" .tar)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
-
 				docker --context="$cpanel_username" exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
-				#TODO: test# docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "CREATE DATABASE \"$db_name\";"
 
                 log "Importing tables for database: $db_name"
                 docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "$mysql_type:/tmp/${db_name}.tar" >/dev/null 2>&1		
-				docker --context="$cpanel_username" exec postgres bash -c "
-					cd /tmp && \
-					tar -xf /tmp/${db_name}.tar restore.sql && \
-					psql -U postgres -d \"$db_name\" -f restore.sql && \
-					rm restore.sql /tmp/${db_name}.tar
-				"
+				docker --context="$cpanel_username" exec postgres bash -c "cd /tmp && tar -xf /tmp/${db_name}.tar restore.sql && psql -U postgres -d \"$db_name\" -f restore.sql && rm restore.sql /tmp/${db_name}.tar"
                 current_db=$((current_db + 1))
             done
             log "Finished processing $((current_db - 1)) databases"
