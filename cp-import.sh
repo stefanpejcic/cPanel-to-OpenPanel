@@ -1112,10 +1112,12 @@ ftp_accounts_import() {
 
 import_email_accounts_and_data() {
     local cpanel_username="$1"
-    local base_dir="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/etc"
 
-    #echo "WARNING: Importing Email accounts is not yet fully supported."
-	#return 1
+    log "Restoring email accounts and mailboxes for user $cpanel_username"
+
+    local base_dir="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/etc"
+	
+	dry_run "Would restore email accounts from $base_dir" && return
 
 	postfix_file="/usr/local/mail/openmail/docker-data/dms/config/postfix-accounts.cf"
 	if [ -f "$postfix_file" ]; then
