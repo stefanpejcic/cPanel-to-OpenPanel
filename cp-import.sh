@@ -544,8 +544,12 @@ restore_ssl() {
             local new_key_file="$dest_dir/$domain.key"
             if [ -f "$key_file" ]; then
                 cp "$key_file" "$new_key_file"
-                cp "$cert_file" "$new_cert_file"             
-                log "Installing SSL certificate for domain: $domain"
+                cp "$cert_file" "$new_cert_file"         
+			    if [[ "$domain" == *.cpanel.site ]]; then
+			        echo "Skipping cPanel temporary domain: $domain"
+			        continue
+			    fi
+				log "Installing SSL certificate for domain: $domain"
                 opencli domains-ssl "$domain" custom "/var/www/html/$domain.key" "/var/www/html/$domain.crt"
 				rm -rf "$new_cert_file" "$new_key_file"
             else
