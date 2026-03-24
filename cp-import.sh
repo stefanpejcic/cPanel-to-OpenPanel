@@ -756,18 +756,29 @@ restore_domains() {
         sub_domains=""
         addon_domains=""
 
+		parked_domains_section=false
+		sub_domains_section=false
+		addon_domains_section=false
+
+
         while IFS= read -r line; do
             if [[ "$line" =~ ^main_domain: ]]; then
                 main_domain=$(echo "$line" | awk '{print $2}')
-            elif [[ "$line" =~ ^parked_domains: ]]; then
-                parked_domains_section=true
-				continue
-            elif [[ "$line" =~ ^sub_domains: ]]; then
-                sub_domains_section=true
-                continue
-            elif [[ "$line" =~ ^addon_domains: ]]; then
-                addon_domains_section=true
-                continue
+			elif [[ "$line" =~ ^parked_domains: ]]; then
+			    parked_domains_section=true
+			    sub_domains_section=false
+			    addon_domains_section=false
+			    continue
+			elif [[ "$line" =~ ^sub_domains: ]]; then
+			    sub_domains_section=true
+			    parked_domains_section=false
+			    addon_domains_section=false
+			    continue
+			elif [[ "$line" =~ ^addon_domains: ]]; then
+			    addon_domains_section=true
+			    parked_domains_section=false
+			    sub_domains_section=false
+			    continue
             fi
 
             if [[ "$sub_domains_section" == true ]]; then
@@ -800,6 +811,7 @@ restore_domains() {
 
         sub_domains_array=()
         addon_domains_array=()
+		parked_domains_array=()
 
         # Parse sub_domains
         while IFS= read -r domain; do
