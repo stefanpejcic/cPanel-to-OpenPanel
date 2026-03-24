@@ -1184,13 +1184,12 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				    STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
 				fi
 				# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
-				if [ -d "$base_dir/mail/$domain/$username" ]; then
-				#####rm -rf "$STORE_EMAILS_IN/$domain/$username/" && mv "$base_dir/mail/$domain/$username/" "$STORE_EMAILS_IN/$domain/$username/"
-				#TODO: test!
-				mkdir -p "$STORE_EMAILS_IN/PROBA/$domain/$username/"
-				echo "rsync -av --remove-source-files $base_dir/mail/$domain/$username/. $STORE_EMAILS_IN/$domain/$username/" > /root/komanda.txt
-				rsync -av --remove-source-files "$base_dir/mail/$domain/$username/." "$STORE_EMAILS_IN/$domain/$username/"
+				if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
+					log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/$username/"
+					rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username/." "$STORE_EMAILS_IN/$domain/$username/"
 					#rsync -av --remove-source-files "/home/stefantestira/docker-data/volumes/stefantestira_html_data/_data/mail/stefantestira.rs/emailtest1/." "/var/mail/stefantestira.rs/emailtest1/"
+				else
+					log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
