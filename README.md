@@ -1,5 +1,5 @@
 # cPanel 2 OpenPanel account import
-Free OpenPanel module to import cPanel backup in OpenPanel
+Import cPanel full account backup to OpenPanel
 
 Maintained by [CodeWithJuber](https://github.com/CodeWithJuber)
 
