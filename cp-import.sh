@@ -269,8 +269,10 @@ locate_backup_directories() {
     log "- cPanel configuration: $cp_file"
 }
 
-get_mariadb_or_mysql_for_user() {
+get_mysql_type_cnf_and_socket() {
     mysql_type=$(grep '^MYSQL_TYPE=' /home/$cpanel_username/.env | cut -d '=' -f2 | tr -d '"')
+	mysql_socket="/home/$cpanel_username/sockets/mysqld/mysqld.sock"
+	mysql_cnf="/home/$cpanel_username/my.cnf"
 }
 
 reload_user_quotas() {
@@ -1286,12 +1288,6 @@ write_import_activity() {
 }
 
 
-mysql_login_info(){
-	# get logins
-	mysql_socket="/home/$cpanel_username/sockets/mysqld/mysqld.sock"
-	mysql_cnf="/home/$cpanel_username/my.cnf"
-}
-
 # MAIN
 main() {
     start_message                                                              # what will be imported
@@ -1316,12 +1312,11 @@ main() {
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
     setquota -u $cpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
-    get_mariadb_or_mysql_for_user                                              # mysql or mariadb
+    get_mysql_type_cnf_and_socket                                              # mysql or mariadb, path to socket and my.cnf logins
     #NOT NEEDED ON CPANEL #fix_perms                                           # fix permissions for all files
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
-	mysql_login_info                                                           # read my.cnf for user and get socket path
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
 	restore_psql "$psqldir"                                                    # postgresql databases, users and grants
     restore_cron                                                               # cronjob
