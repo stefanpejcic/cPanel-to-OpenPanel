@@ -467,7 +467,7 @@ restore_psql() {
 				docker --context="$cpanel_username" exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
 
                 log "Importing tables for database: $db_name"
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "$mysql_type:/tmp/${db_name}.tar" >/dev/null 2>&1		
+                docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "postgres:/tmp/${db_name}.tar" >/dev/null 2>&1		
 				docker --context="$cpanel_username" exec postgres bash -c "cd /tmp && tar -xf /tmp/${db_name}.tar restore.sql && psql -U postgres -d \"$db_name\" -f restore.sql && rm restore.sql /tmp/${db_name}.tar"
                 current_db=$((current_db + 1))
             done
@@ -526,8 +526,7 @@ restore_mysql() {
                 log "WARNING: Database dumps were created on a MariaDB server with '--sandbox' mode. Applying workaround for backwards compatibility to MySQL (BUG: https://jira.mariadb.org/browse/MDEV-34183)"
                 sandbox_warning_logged=true
             fi
-            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && \
-            mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
+            tail -n +2 "${real_backup_files_path}/mysql/$db_file" > "${real_backup_files_path}/mysql/${db_file}.workaround" && mv "${real_backup_files_path}/mysql/${db_file}.workaround" "${real_backup_files_path}/mysql/$db_file"
         fi
     }
 
@@ -557,12 +556,12 @@ restore_mysql() {
         fi
         log "Initializing $mysql_type service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
-
+	
         # STEP 4: Wait for MySQL to be ready (max 300 seconds)
 		local max_wait=300
         log "Waiting for MySQL service to start... (max ${max_wait}s)"
         waited=0
-        while ! docker --context="$cpanel_username" exec "$mysql_type" $mysql_type -e "SELECT 1" >/dev/null 2>&1; do
+        while ! mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" --execute="SELECT 1;" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
@@ -581,18 +580,12 @@ restore_mysql() {
                 db_name=$(basename "$db_file" .create)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
-                if [ "$mysql_type" = "mysql" ]; then
-					apply_sandbox_workaround "$db_name.create"
-				fi
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.create" "$mysql_type:/tmp/${db_name}.create" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/${db_name}.create && rm /tmp/${db_name}.create"
+				[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.create"
+				mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.create" && echo "Database: $db_name - Create OK" || echo "Database: $db_name - Create FAILED"
 
                 log "Importing tables for database: $db_name"
-				if [ "$mysql_type" = "mysql" ]; then
-                	apply_sandbox_workaround "$db_name.sql"
-				fi
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql/$db_name.sql" "$mysql_type:/tmp/${db_name}.sql" >/dev/null 2>&1
-                docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type $db_name < /tmp/${db_name}.sql && rm /tmp/${db_name}.sql"
+				[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.sql"
+				mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.sql" && echo "Database: $db_name - Import tables OK" || echo "Database: $db_name - Import tables FAILED"
 
                 current_db=$((current_db + 1))
             done
@@ -604,9 +597,7 @@ restore_mysql() {
         # STEP 6: Import grants
         log "Importing database grants"
         python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
-
-        docker --context="$cpanel_username" cp "${real_backup_files_path}/mysql.TEMPORARY.sql" "$mysql_type:/tmp/mysql.TEMPORARY.sql" >/dev/null 2>&1
-        docker --context="$cpanel_username" exec "$mysql_type" bash -c "$mysql_type < /tmp/mysql.TEMPORARY.sql && $mysql_type -e 'FLUSH PRIVILEGES;' && rm /tmp/mysql.TEMPORARY.sql"
+		mysql < "${real_backup_files_path}/mysql.TEMPORARY.sql" && mysql -e "FLUSH PRIVILEGES;" && echo "Import grants OK" || { echo "Import grants FAILED" }
 
 		# STEP 7: Start phpMyAdmin
 		log "Starting phpMyAdmin service"
@@ -1295,6 +1286,11 @@ write_import_activity() {
 }
 
 
+mysql_login_info(){
+	# get logins
+	mysql_socket="/home/$cpanel_username/sockets/mysqld/mysqld.sock"
+	mysql_cnf="/home/$cpanel_username/my.cnf"
+}
 
 # MAIN
 main() {
@@ -1325,6 +1321,7 @@ main() {
     restore_php_version "$php_version"                                         # php v needs to run before domains 
     restore_domains                                                            # add domains
     restore_dns_zones                                                          # add dns 
+	mysql_login_info                                                           # read my.cnf for user and get socket path
     restore_mysql "$mysqldir"                                                  # mysql databases, users and grants
 	restore_psql "$psqldir"                                                    # postgresql databases, users and grants
     restore_cron                                                               # cronjob
