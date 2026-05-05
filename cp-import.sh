@@ -1195,7 +1195,7 @@ import_email_accounts_and_data() {
 		: # keep as is
 	#elif [[ "$STORE_EMAILS_IN" == "user_dir" ]]; then
 	else # TODO: this is a fallback for <1.7.3
-		STORE_EMAILS_IN="domain"
+		STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
 	fi
 
 
@@ -1209,7 +1209,6 @@ import_email_accounts_and_data() {
 			log "WARNING: Emails will not be imported because the mailbox format could not be detected. Emails remain available in /var/www/html/mail/."
 		fi
 	fi
-
 
 
 	# Loop through each folder in the base dir
@@ -1234,9 +1233,6 @@ ${email}|{SHA512-CRYPT}${password_hash}
 				# 2. move mails
 				# openpanel storage: $STORE_EMAILS_IN/stefantestira.rs/emailtest2 OR /home/stefan/mail/stefantestira.rs/emailtest2
 				if [ "$mailbox_format" == "maildir" ]; then
-					if [ "$STORE_EMAILS_IN" == "domain" ]; then
-					    STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
-					fi
 					# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
 						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
@@ -1244,6 +1240,8 @@ ${email}|{SHA512-CRYPT}${password_hash}
 					else
 						log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
 					fi
+				else
+					log "WARNING: messages will not be moved due to unsupported mailbox format: $mailbox_format. More info on how to convert to maildir: https://docs.cpanel.net/whm/email/mailbox-conversion/"
 				fi
 	        else
 	            log "Skipping $domain: not owned by user $cpanel_username."
