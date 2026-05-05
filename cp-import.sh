@@ -1203,6 +1203,7 @@ import_email_accounts_and_data() {
 		fi
 	fi
 
+	local temp_email_password=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
 
 	# Loop through each folder in the base dir
     for dir_path in "$base_dir"/*/; do
@@ -1216,11 +1217,9 @@ import_email_accounts_and_data() {
 				    [[ -z "$username" || -z "$password_hash" ]] && continue
 				    email="${username}@${domain}"
 				    log "Importing mailbox: $email"
-				    opencli email-setup email add "$email" tempPassword123 >/dev/null 2>&1
+				    opencli email-setup email add "$email" "$temp_email_password" >/dev/null 2>&1
 					# openpanel format: emailtest@openpanel.org|{SHA512-CRYPT}$6$yspsXbUo.nkxXIs6$4x.rqdVe8dGaLWKZhlbmO5xFEgverG/ESS8.Cz3w9qH1GP6coXu7qs1CBFSE1co6cYHuVIqFS9bJR0PUcH3EZ0
-					sed -i.bak "/^${email}|/c\\
-${email}|{SHA512-CRYPT}${password_hash}
-" "$postfix_file"
+					sed -i.bak "/^${email}|/c\\${email}|{SHA512-CRYPT}${password_hash}" "$postfix_file"
 				done < "$shadow_file"
 
 				# 2. move mails
