@@ -274,7 +274,7 @@ get_mariadb_or_mysql_for_user() {
 }
 
 reload_user_quotas() {
-	nohup bash -c 'quotacheck -avm && repquota -u / > /etc/openpanel/openpanel/core/users/repquota' >/dev/null 2>&1 &
+	nohup bash -c 'opencli user-quota' >/dev/null 2>&1 &
 	disown
 }
 
