@@ -95,7 +95,10 @@ command_exists() {
 install_dependencies() {
     log "Checking and installing dependencies..."
     install_needed=false
-    commands=(tar unzip jq pigz wget curl rsync)
+    commands=(jq curl rsync)
+
+    [[ "$backup_file" == *.zip ]] && commands+=(unzip)
+    [[ "$backup_file" == *.tar || "$backup_file" == *.tar.gz || "$backup_file" == *.tgz || "$backup_file" == *.gz ]] && commands+=(tar pigz)
 
     for cmd in "${commands[@]}"; do
         command_exists "$cmd" || { install_needed=true; break; }
@@ -105,7 +108,7 @@ install_dependencies() {
         if command_exists apt-get; then
             log "Detected APT package manager. Updating..."
             apt-mark hold linux-image-generic linux-headers-generic >/dev/null 2>&1
-            apt-get update -y >/dev/null 2>&1
+            #apt-get update -y >/dev/null 2>&1
             for cmd in "${commands[@]}"; do
                 if ! command_exists "$cmd"; then
                     log "Installing $cmd (APT)"
@@ -152,7 +155,6 @@ validate_plan_exists(){
 # CHECK BACKUP FILE EXTENSION AND DETERMINE SIZE NEEDED FOR RESTORE
 check_if_valid_cp_backup() {
     local backup_location="$1"
-    local backup_filename
     backup_filename=$(basename "$backup_location")
 
     ARCHIVE_SIZE=$(stat -c%s "$backup_location")
