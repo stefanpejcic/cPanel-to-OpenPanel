@@ -541,74 +541,76 @@ restore_mysql() {
 		fi
 	fi
 
-    if [ -d "$mysql_dir" ]; then
-        # STEP 2: Replace old IP and hostname
-        old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
-        log "Replacing old server IP: $old_ip with '%' in database grants"
-        sed -i "s/$old_ip/%/g" "$mysql_conf"
+	if [ ! -d "$mysql_dir" ]; then
+		log "No MySQL databases found to restore"
+		return
+	fi
 
-        old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
-        log "Removing old hostname $old_hostname from database grants"
-        sed -i "/$old_hostname/d" "$mysql_conf"
-        
-        # STEP 3: Start MySQL container
-        if [ "$mysql_type" = "mysql" ]; then
-            mysql_version="8.0"
-            sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
-        fi
-        log "Initializing $mysql_type service for user"
-        cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
+	# STEP 2: Replace old IP and hostname
+	old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
+	log "Replacing old server IP: $old_ip with '%' in database grants"
+	sed -i "s/$old_ip/%/g" "$mysql_conf"
+
+	old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
+	log "Removing old hostname $old_hostname from database grants"
+	sed -i "/$old_hostname/d" "$mysql_conf"
 	
-        # STEP 4: Wait for MySQL to be ready (max 300 seconds)
-		local max_wait=300
-        log "Waiting for MySQL service to start... (max ${max_wait}s)"
-        waited=0
-        while ! mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" --execute="SELECT 1;" >/dev/null 2>&1; do
-            sleep 2
-            waited=$((waited + 2))
-            if [ "$waited" -ge "$max_wait" ]; then
-                log "ERROR: $mysql_type did not respond to 'SELECT 1' after $max_wait seconds - no database or users are imported"
-                return 1
-            fi
-        done
-        log "$mysql_type is ready after $waited seconds"
+	# STEP 3: Start MySQL container
+	if [ "$mysql_type" = "mysql" ]; then
+		mysql_version="8.0"
+		sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
+	fi
 
-        # STEP 5: Create and import databases
-        total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
-        log "Starting import for $total_databases MySQL databases"
-        if [ "$total_databases" -gt 0 ]; then
-            current_db=1
-            for db_file in "$mysql_dir"/*.create; do
-                db_name=$(basename "$db_file" .create)
+	log "Initializing $mysql_type service for user"
+	cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
 
-                log "Creating database: $db_name (${current_db}/${total_databases})"
-				[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.create"
-				mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.create" && echo "Database: $db_name - Create OK" || echo "Database: $db_name - Create FAILED"
+	# STEP 4: Wait for MySQL to be ready (max 300 seconds)
+	local max_wait=300
+	log "Waiting for MySQL service to start... (max ${max_wait}s)"
+	waited=0
+	while ! mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" --execute="SELECT 1;" >/dev/null 2>&1; do
+		sleep 2
+		waited=$((waited + 2))
+		if [ "$waited" -ge "$max_wait" ]; then
+			log "ERROR: $mysql_type did not respond to 'SELECT 1' after $max_wait seconds - no database or users are imported"
+			return 1
+		fi
+	done
+	log "$mysql_type is ready after $waited seconds"
 
-                log "Importing tables for database: $db_name"
-				[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.sql"
-				mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.sql" && echo "Database: $db_name - Import tables OK" || echo "Database: $db_name - Import tables FAILED"
+	# STEP 5: Create and import databases
+	total_databases=$(ls "$mysql_dir"/*.create 2>/dev/null | wc -l)
+	log "Starting import for $total_databases MySQL databases"
+	if [ "$total_databases" -gt 0 ]; then
+		current_db=1
+		for db_file in "$mysql_dir"/*.create; do
+			db_name=$(basename "$db_file" .create)
 
-                current_db=$((current_db + 1))
-            done
-            log "Finished processing $((current_db - 1)) databases"
-        else
-            log "WARNING: No MySQL databases found"
-        fi
+			log "Creating database: $db_name (${current_db}/${total_databases})"
+			[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.create"
+			mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.create" && echo "Database: $db_name - Create OK" || echo "Database: $db_name - Create FAILED"
 
-        # STEP 6: Import grants
-        log "Importing database grants"
-        python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
-		mysql < "${real_backup_files_path}/mysql.TEMPORARY.sql" && mysql -e "FLUSH PRIVILEGES;" && echo "Import grants OK" || { echo "Import grants FAILED" }
+			log "Importing tables for database: $db_name"
+			[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.sql"
+			mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.sql" && echo "Database: $db_name - Import tables OK" || echo "Database: $db_name - Import tables FAILED"
 
-		# STEP 7: Start phpMyAdmin
-		log "Starting phpMyAdmin service"
-		nohup cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d phpmyadmin >/dev/null 2>&1 &
-		disown
+			current_db=$((current_db + 1))
+		done
+		log "Finished processing $((current_db - 1)) databases"
+	else
+		log "WARNING: No MySQL databases found"
+	fi
 
-    else
-        log "No MySQL databases found to restore"
-    fi
+	# STEP 6: Import grants
+	log "Importing database grants"
+	python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
+	mysql < "${real_backup_files_path}/mysql.TEMPORARY.sql" && mysql -e "FLUSH PRIVILEGES;" && echo "Import grants OK" || { echo "Import grants FAILED"; }
+
+	# STEP 7: Start phpMyAdmin
+	log "Starting phpMyAdmin service"
+	nohup cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d phpmyadmin >/dev/null 2>&1 &
+	disown
+
 }
 
 # ======================================================================
