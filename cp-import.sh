@@ -1283,6 +1283,7 @@ restore_notifications() {
 }
 
 write_import_activity() {
+    dry_run "Would write the import to /etc/openpanel/openpanel/core/users/$cpanel_username/activity.log" && return
     echo "$(date '+%Y-%m-%d %H:%M:%S')  $new_ip  Administrator ROOT user imported cpanel backup file" > /etc/openpanel/openpanel/core/users/$cpanel_username/activity.log
 }
 
