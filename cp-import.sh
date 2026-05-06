@@ -382,6 +382,7 @@ create_new_user() {
 
     dry_run "Would create user $username with email $email and plan $plan_name" && return
 
+    log "Creating openpanel user and configuring services.."
     create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" --no-sentinel >/dev/null 2>&1)
     while IFS= read -r line; do
         log "$line"
