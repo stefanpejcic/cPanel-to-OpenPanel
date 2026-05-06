@@ -543,17 +543,8 @@ restore_mysql() {
 		log "No MySQL databases found to restore"
 		return
 	fi
-
-	# STEP 2: Replace old IP and hostname
-	old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
-	log "Replacing old server IP: $old_ip with '%' in database grants"
-	sed -i "s/$old_ip/%/g" "$mysql_conf"
-
-	old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
-	log "Removing old hostname $old_hostname from database grants"
-	sed -i "/$old_hostname/d" "$mysql_conf"
 	
-	# STEP 3: Start MySQL container
+	# STEP 2: Start MySQL container
 	if [ "$mysql_type" = "mysql" ]; then
 		mysql_version="8.0"
 		sed -i 's/^MYSQL_VERSION=.*/MYSQL_VERSION="8.0"/' /home/"$cpanel_username"/.env
@@ -561,6 +552,15 @@ restore_mysql() {
 
 	log "Initializing $mysql_type service for user"
 	cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
+
+	# STEP 3: Replace old IP and hostname
+	old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
+	log "Replacing old server IP: $old_ip with '%' in database grants"
+	sed -i "s/$old_ip/%/g" "$mysql_conf"
+
+	old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
+	log "Removing old hostname $old_hostname from database grants"
+	sed -i "/$old_hostname/d" "$mysql_conf"
 
 	# STEP 4: Wait for MySQL to be ready (max 300 seconds)
 	local max_wait=300
