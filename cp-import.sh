@@ -754,12 +754,12 @@ restore_wordpress() {
 
 # LOCAE
 restore_locale() {
-    if [ -f "$real_backup_files_path/cp/$openpanel_username" ]; then
-        local file_path="$real_backup_files_path/cp/$openpanel_username"
+    if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
+        local file_path="$real_backup_files_path/cp/$cpanel_username"
     	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
 			log "Setting locale:$locale_code for OpenPanel UI"
-			echo "$locale_code" > /home/$openpanel_username/locale
+			echo "$locale_code" > /home/$cpanel_username/locale
 		else
 			log "Skipping user locale: '$locale_code' is not available"
 		fi
@@ -1192,8 +1192,8 @@ import_email_accounts_and_data() {
 	fi
 
 
-    if [ -f "$real_backup_files_path/cp/$openpanel_username" ]; then
-    	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/cp/$openpanel_username" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+    if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
+    	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/cp/$cpanel_username" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 	    if [ "$mailbox_format" == "maildir" ]; then
 			:
 		elif [ "$mailbox_format" == "mbox" ]; then
