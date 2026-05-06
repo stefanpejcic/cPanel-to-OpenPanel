@@ -1194,7 +1194,7 @@ import_email_accounts_and_data() {
 
     if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
     	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/cp/$cpanel_username" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
-	    if [ "$mailbox_format" == "maildir" ]; then
+	    if [ "$mailbox_format" = "maildir" ] || [ "$mailbox_format" = "ma" ]; then
 			:
 		elif [ "$mailbox_format" == "mbox" ]; then
 			log "WARNING: Emails will not be imported because the cPanel account uses 'mbox' format, while OpenPanel uses 'maildir'. Emails remain available in /var/www/html/mail/."
@@ -1224,7 +1224,7 @@ import_email_accounts_and_data() {
 
 				# 2. move mails
 				# openpanel storage: $STORE_EMAILS_IN/stefantestira.rs/emailtest2 OR /home/stefan/mail/stefantestira.rs/emailtest2
-				if [ "$mailbox_format" == "maildir" ]; then
+				if [ "$mailbox_format" = "maildir" ] || [ "$mailbox_format" = "ma" ]; then
 					# cpanel storage: extract/backup-3.24.2026_14-03-06_stefantestira/homedir/mail/stefantestira.rs/emailtest2
 					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
 						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
