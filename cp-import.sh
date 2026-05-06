@@ -212,11 +212,7 @@ extract_cpanel_backup() {
     elif [ "$extraction_command" = "tar -xzf" ]; then
         backup_size=$(stat -c %s "${backup_location}")
         zero_one_percent=$((backup_size / 1000000))
-        tar --use-compress-program=pigz \
-            --checkpoint="$zero_one_percent" \
-            --checkpoint-action=dot \
-            -xf "$backup_location" \
-            -C "$backup_dir" 
+        tar --use-compress-program=pigz --checkpoint="$zero_one_percent" --checkpoint-action=dot -xf "$backup_location" -C "$backup_dir" 
     else
         $extraction_command "$backup_location" -C "$backup_dir"
     fi
