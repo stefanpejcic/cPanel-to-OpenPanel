@@ -446,7 +446,7 @@ restore_psql() {
     log "Restoring PostgreSQL databases"
     dry_run "Would restore PostgreSQL databases for user $cpanel_username" && return
 
-	if [ -d "$psql_dir" ]; then
+	if [ -n "$(ls -A $psql_dir 2>/dev/null)" ]; then
         # STEP 1: Start psql container
         log "Initializing postgres service for user"
         cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d postgres >/dev/null 2>&1
@@ -549,7 +549,7 @@ restore_mysql() {
 		fi
 	fi
 
-	if [ ! -d "$mysql_dir" ]; then
+	if [ ! -n "$(ls -A $mysql_dir 2>/dev/null)" ]; then
 		log "No MySQL databases found to restore"
 		return
 	fi
@@ -596,7 +596,7 @@ restore_mysql() {
 
 			log "Creating database: $db_name (${current_db}/${total_databases})"
 			[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.create"
-			mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" "$db_name" < "${real_backup_files_path}/mysql/$db_name.create" && echo "Database: $db_name - Create OK" || echo "Database: $db_name - Create FAILED"
+			mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" < "${real_backup_files_path}/mysql/$db_name.create" && echo "Database: $db_name - Create OK" || echo "Database: $db_name - Create FAILED"
 
 			log "Importing tables for database: $db_name"
 			[ "$mysql_type" = "mysql" ] && apply_sandbox_workaround "$db_name.sql"
@@ -612,7 +612,7 @@ restore_mysql() {
 	# STEP 6: Import grants
 	log "Importing database grants"
 	python3 "$script_dir/mysql/json_2_sql.py" "${real_backup_files_path}/mysql.sql" "${real_backup_files_path}/mysql.TEMPORARY.sql" >/dev/null 2>&1
-	mysql < "${real_backup_files_path}/mysql.TEMPORARY.sql" && mysql -e "FLUSH PRIVILEGES;" && echo "Import grants OK" || { echo "Import grants FAILED"; }
+	mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" < "${real_backup_files_path}/mysql.TEMPORARY.sql" && mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" -e "FLUSH PRIVILEGES;" && echo "Import grants OK" || { echo "Import grants FAILED"; }
 
 	# STEP 7: Start phpMyAdmin
 	log "Starting phpMyAdmin service"
