@@ -46,7 +46,7 @@ handle_error() {
     exit 1
 }
 
-trap 'handle_error "${FUNCNAME[-1]}" "$LINENO"' ERR
+trap 'handle_error "${FUNCNAME[0]}" "$LINENO"' ERR
 
 cleanup() {
     log "Cleaning up temporary files and directories"
@@ -565,8 +565,12 @@ restore_mysql() {
 
 	# STEP 3: Replace old IP and hostname
 	old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
-	log "Replacing old server IP: $old_ip with '%' in database grants"
-	sed -i "s/$old_ip/%/g" "$mysql_conf"
+	if [ -z "$old_ip" ]; then
+	    log "WARNING: old server ip address not detected in cp file - grants will not be updated to '%'."
+	else
+	    log "Replacing old server IP: $old_ip with '%' in database grants"
+	    sed -i "s/$old_ip/%/g" "$mysql_conf"
+	fi
 
 	old_hostname=$(cat "${real_backup_files_path}/meta/hostname")
 	log "Removing old hostname $old_hostname from database grants"
@@ -1178,7 +1182,7 @@ ftp_accounts_import() {
 
 		log "Importing: $username -> $folder"
         sed -i "\|^${username}|d" "$users_list"
-        echo "${username}|${hashed_pass}|${folder}|${uid}|${gid}" >> "$users_list"
+        echo "${username}|${pass}|${folder}|${uid}|${gid}" >> "$users_list"
 
     done < "$ftp_conf"
 
@@ -1215,14 +1219,7 @@ import_email_accounts_and_data() {
 
 	# 1: check where openadmin is configured to store mail data
 	STORE_EMAILS_IN=$(grep -E '^email_storage_location=' /etc/openpanel/openadmin/config/admin.ini | cut -d'=' -f2- | xargs)
-
-	if [[ "$STORE_EMAILS_IN" == /* ]]; then
-		: # keep as is
-	#elif [[ "$STORE_EMAILS_IN" == "user_dir" ]]; then
-	else # TODO: this is a fallback for <1.7.3
-		STORE_EMAILS_IN="/home/$cpanel_username/mail/$domain/"
-	fi
-
+	[[ "$STORE_EMAILS_IN" == /* ]] || STORE_EMAILS_IN=""
 
     if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
     	local mailbox_format=$(grep '^MAILBOX_FORMAT=' "$real_backup_files_path/cp/$cpanel_username" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
@@ -1240,9 +1237,11 @@ import_email_accounts_and_data() {
 	OPENPANEL_UID=$(id -u $cpanel_username)
 
     for dir_path in "$base_dir"/*/; do
+		local domain
 	    shadow_file="$dir_path/shadow"
 	    if [[ -f "$shadow_file" && -s "$shadow_file" ]]; then
 	        domain=$(basename "$dir_path")
+			local store_dir="${STORE_EMAILS_IN:-/home/$cpanel_username/mail/$domain/}"
 	        owner=$(opencli domains-whoowns "$domain" | awk -F': ' '{print $2}')
 	        if [[ "$owner" == "$cpanel_username" ]]; then
 				# cpanel format: <user>:<sha_hash>/:<uid>::::::
@@ -1261,7 +1260,7 @@ import_email_accounts_and_data() {
 					# cpanel stores email in: extract/<backup_filename>/homedir/mail/<domain>/<user>
 					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
 						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
-						rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$STORE_EMAILS_IN/$domain/"
+						rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$store_dir/$domain/"
 					else
 						log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
 					fi
@@ -1302,12 +1301,12 @@ restore_notifications() {
     notifications_cp_file="$real_backup_files_path/cp/$cpanel_username"
     notifications_op_file="/etc/openpanel/openpanel/core/users/$cpanel_username/notifications.yaml"
    
-    if [ -z "$notifications_cp_file" ]; then
+    if [ ! -f "$notifications_cp_file" ]; then
         log "WARNING: Unable to access $notifications_cp_file for notification preferences - Skipping"
     else
         dry_run "Would restore notification preferences from $notifications_cp_file" && return
 
-        grep "notify_" $notifications_cp_file > $notifications_op_file
+		grep "notify_" "$notifications_cp_file" > "$notifications_op_file" || true
         cat_notifications_file=$(cat $notifications_op_file 2>&1)
         while IFS= read -r line; do
             log "$line"
