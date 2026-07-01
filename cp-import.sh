@@ -98,8 +98,9 @@ install_dependencies() {
     install_needed=false
     commands=(jq curl rsync)
 
-    [[ "$backup_file" == *.zip ]] && commands+=(unzip)
-    [[ "$backup_file" == *.tar || "$backup_file" == *.tar.gz || "$backup_file" == *.tgz || "$backup_file" == *.gz ]] && commands+=(tar pigz)
+	[[ "$backup_filename" == *.zip ]] && commands+=(unzip)
+	[[ "$backup_filename" == *.tar || "$backup_filename" == *.tar.gz || "$backup_filename" == *.tgz || "$backup_filename" == *.gz ]] && commands+=(tar pigz)
+		
 
     for cmd in "${commands[@]}"; do
         command_exists "$cmd" || { install_needed=true; break; }
