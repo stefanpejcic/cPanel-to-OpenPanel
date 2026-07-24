@@ -509,13 +509,13 @@ restore_psql() {
 	if [ -n "$(ls -A $psql_dir 2>/dev/null)" ]; then
         # STEP 1: Start psql container
         log "Initializing postgres service for user"
-        cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d postgres >/dev/null 2>&1
+        cd "/home/$cpanel_username/" && CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman-compose up -d postgres >/dev/null 2>&1
 
         # STEP 2: Wait for PostgreSQL to be ready (max 300 seconds)
 		local max_wait=300
         log "Waiting for PostgreSQL service to start... (max ${max_wait}s)"
-        waited=0
-		while ! docker --context="$cpanel_username" exec postgres psql -U postgres -d "$postgres" -c "SELECT 1;" >/dev/null 2>&1; do
+        waited=0		
+		while ! CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman exec postgres psql -U postgres -d "$postgres" -c "SELECT 1;" >/dev/null 2>&1; do
             sleep 2
             waited=$((waited + 2))
             if [ "$waited" -ge "$max_wait" ]; then
@@ -534,11 +534,11 @@ restore_psql() {
                 db_name=$(basename "$db_file" .tar)
 
                 log "Creating database: $db_name (${current_db}/${total_databases})"
-				docker --context="$cpanel_username" exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
+				CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman exec postgres psql -U postgres -c "CREATE DATABASE \"$db_name\";" #>/dev/null 2>&1
 
                 log "Importing tables for database: $db_name"
-                docker --context="$cpanel_username" cp "${real_backup_files_path}/psql/$db_name.tar" "postgres:/tmp/${db_name}.tar" >/dev/null 2>&1		
-				docker --context="$cpanel_username" exec postgres bash -c "cd /tmp && tar -xf /tmp/${db_name}.tar restore.sql && psql -U postgres -d \"$db_name\" -f restore.sql && rm restore.sql /tmp/${db_name}.tar"
+                CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman cp "${real_backup_files_path}/psql/$db_name.tar" "postgres:/tmp/${db_name}.tar" >/dev/null 2>&1		
+				CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman exec postgres bash -c "cd /tmp && tar -xf /tmp/${db_name}.tar restore.sql && psql -U postgres -d \"$db_name\" -f restore.sql && rm restore.sql /tmp/${db_name}.tar"
                 current_db=$((current_db + 1))
             done
             log "Finished processing $((current_db - 1)) databases"
@@ -551,7 +551,7 @@ restore_psql() {
 			log "Importing database users"
 		    while IFS= read -r line || [[ -n "$line" ]]; do
 		        [[ -z "$line" ]] && continue
-		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
+		        CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman exec postgres psql -U postgres -d postgres -c "$line"
 		    done < "$psql_users"
 		else
 		    echo "WARNING: No PostgreSQL USERS detected"
@@ -562,7 +562,7 @@ restore_psql() {
 			log "Importing database grants"
 		    while IFS= read -r line || [[ -n "$line" ]]; do
 		        [[ -z "$line" ]] && continue
-		        docker --context="$cpanel_username" exec postgres psql -U postgres -d postgres -c "$line"
+		        CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman exec postgres psql -U postgres -d postgres -c "$line"
 		    done < "$psql_grants"
 		else
 		    echo "WARNING: No PostgreSQL GRANTS detected"
@@ -621,7 +621,7 @@ restore_mysql() {
 	fi
 
 	log "Initializing $mysql_type service for user"
-	cd "/home/$cpanel_username/" && docker --context="$cpanel_username" compose up -d "$mysql_type" >/dev/null 2>&1
+	cd "/home/$cpanel_username/" && CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman-compose up -d "$mysql_type" >/dev/null 2>&1
 
 	# STEP 3: Replace old IP and hostname
 	old_ip=$(grep -oP 'IP=\K[0-9.]+' "${real_backup_files_path}/cp/$cpanel_username")
@@ -713,7 +713,7 @@ restore_ssl() {
             fi
         done
 
-        nohup docker --context=default exec caddy caddy reload --config /etc/caddy/Caddyfile > /dev/null 2>&1 &
+        nohup podman exec caddy caddy reload --config /etc/caddy/Caddyfile > /dev/null 2>&1 &
         disown
 
     else
@@ -1110,7 +1110,7 @@ restore_cron() {
         if [ "$job_found" = true ]; then
             log "Converted crontab to Ofelia config at: $ofelia_cron_path"
             log "Starting Cron service"
-            output=$(cd /home/$cpanel_username && docker --context=$cpanel_username compose up -d cron >/dev/null 2>&1)           
+            output=$(cd /home/$cpanel_username && CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman-compose up -d cron >/dev/null 2>&1)           
             while IFS= read -r line; do
                 log "$line"
             done <<< "$output"
@@ -1249,12 +1249,12 @@ ftp_accounts_import() {
 	actually_imported=$(wc -l $users_list)
 	log "Finished importing FTP accounts: $actually_imported"
 
-	if [ -z "$(docker ps -q -f name=openadmin_ftp)" ]; then
+	if [ -z "$(CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman ps -q -f name=openadmin_ftp)" ]; then
 		log "FTP service is not running, starting.."
-	    cd /root && docker --context default compose up -d openadmin_ftp >/dev/null 2>&1
+	    cd /root && podman-compose up -d openadmin_ftp >/dev/null 2>&1
 	else
 		log "FTP service is running, reloading.."
-		docker --context default restart openadmin_ftp >/dev/null 2>&1
+		podman restart openadmin_ftp >/dev/null 2>&1
 	fi
 }
 
