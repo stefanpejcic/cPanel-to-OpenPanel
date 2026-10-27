@@ -793,6 +793,10 @@ restore_files() {
     rm -rf "$real_backup_files_path"/homedir/{.cpanel,.trash,wordpress-backups}
     # move into the _data dir user-add made, replacing the dir would leave already started containers on the old one
     (shopt -s dotglob nullglob; mv -- "$real_backup_files_path"/homedir/* "$data_dir"/) || rsync -a "$real_backup_files_path/homedir/" "$data_dir/"
+    # cPanel lets the webserver into docroots via group nobody, which the chown below drops, so open those to others
+    local nobody_gid
+    nobody_gid=$(getent group nobody | cut -d: -f3)
+    find "$data_dir" \( -gid 99 -o -gid 65534 ${nobody_gid:+-o -gid "$nobody_gid"} \) -exec chmod o+rX {} +
     # same permissions and owner user-add gives the volume
     chmod -R g+w "$data_dir"
     chown -R "$cpanel_username:$cpanel_username" "$data_dir"
