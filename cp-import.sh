@@ -1240,15 +1240,18 @@ ftp_accounts_import() {
 
 	: '
 	cpanel format:	  <USERNAME>:<HASHED_PASS>:<UID>:<GID>:<CP_USERNAME>:<PATH>:<SHELL>
-	openpanel format: <USERNAME>:<HASHED_PASS>|<PATH>|<UID>|<GID>
+	openpanel format: <USERNAME>|<HASHED_PASS>|<PATH>|<UID>|<GID>
 	'
 
 	users_list="/etc/openpanel/ftp/users/${cpanel_username}/users.list"
     mkdir -p "$(dirname "$users_list")"
     touch "$users_list"
 	dummy_pass=$(openssl rand -base64 12 | tr -d '=+/')
+	# the uid/gid in proftpdpasswd belong to the old cPanel server, run FTP as the account so uploads are owned like its other files
+	local account_uid
+	account_uid=$(stat -c '%u' "/home/$cpanel_username")
 
-	while IFS=: read -r username pass uid gid owner home shell; do
+	while IFS=: read -r username pass _ _ owner home shell; do
 
         [ -z "$username" ] && continue
         [[ "$username" == \#* ]] && continue
@@ -1261,7 +1264,7 @@ ftp_accounts_import() {
 
 		log "Importing: $username -> $folder"
         sed -i "\|^${username}|d" "$users_list"
-        echo "${username}|${pass}|${folder}|${uid}|${gid}" >> "$users_list"
+        echo "${username}|${pass}|${folder}|${account_uid}|${account_uid}" >> "$users_list"
 
     done < "$ftp_conf"
 
