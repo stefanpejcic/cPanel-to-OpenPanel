@@ -422,6 +422,8 @@ check_if_user_exists(){
     backup_filename=$(basename "$backup_location")
     cpanel_username="${backup_filename##*_}"
     cpanel_username="${cpanel_username%%.*}"
+    # WHM transfers and pkgacct name the file cpmove-<user>.tar.gz
+    cpanel_username="${cpanel_username#cpmove-}"
     log "Username: $cpanel_username"
 
     local existing_user=""
@@ -1263,15 +1265,20 @@ ftp_accounts_import() {
 
     done < "$ftp_conf"
 
-	actually_imported=$(wc -l $users_list)
+	actually_imported=$(wc -l < "$users_list")
 	log "Finished importing FTP accounts: $actually_imported"
 
-	if [ -z "$(CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman ps -q -f name=openadmin_ftp)" ]; then
-		log "FTP service is not running, starting.."
-	    cd /root && podman-compose up -d openadmin_ftp >/dev/null 2>&1
-	else
+	# nothing to load, so don't turn on an FTP server the admin may never have enabled
+	[ "$actually_imported" -gt 0 ] || return 0
+
+	# openadmin_ftp is a system container, ask root's podman like opencli ftp-add does, not the user's
+	. /usr/local/opencli/lib/podman.sh
+	if podman_is_running openadmin_ftp; then
 		log "FTP service is running, reloading.."
 		podman restart openadmin_ftp >/dev/null 2>&1
+	else
+		log "FTP service is not running, starting.."
+		podman_ensure_running openadmin_ftp /root openadmin_ftp >/dev/null 2>&1
 	fi
 }
 
