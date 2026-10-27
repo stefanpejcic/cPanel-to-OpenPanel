@@ -206,7 +206,7 @@ validate_archive_paths() {
     if [ "$extraction_command" = "unzip" ]; then
         entries=$(unzip -Z1 -- "$extraction_source" 2>>"$LOG_FILE")
     else
-        entries=$(tar -tf -- "$extraction_source" 2>>"$LOG_FILE")
+        entries=$(tar -tf "$extraction_source" 2>>"$LOG_FILE")
     fi
 
     if [ -z "$entries" ]; then
@@ -274,7 +274,7 @@ extract_cpanel_backup() {
         backup_size=$(stat -c %s "${extraction_source}")
 		zero_one_percent=$((backup_size / 1000000))
 		[ "$zero_one_percent" -le 0 ] && zero_one_percent=1
-		tar --no-absolute-names --checkpoint="$zero_one_percent" --checkpoint-action=dot -xf "$extraction_source" -C "$backup_dir" 2>>"$LOG_FILE"
+		tar --checkpoint="$zero_one_percent" --checkpoint-action=dot -xf "$extraction_source" -C "$backup_dir" 2>>"$LOG_FILE"
     fi
 
     if [ $? -eq 0 ]; then
@@ -335,11 +335,13 @@ get_mysql_type_cnf_and_socket() {
 }
 
 reload_user_quotas() {
+	dry_run "Would reload quotas for all users" && return
 	nohup bash -c 'opencli user-quota' >/dev/null 2>&1 &
 	disown
 }
 
 collect_stats() {
+	dry_run "Would collect resource usage stats for user $cpanel_username" && return
     nohup bash -c "opencli docker-collect_stats '$cpanel_username'" >/dev/null 2>&1 &
 	disown
 }
@@ -452,30 +454,34 @@ create_new_user() {
 	fi
 
 	create_user_command=$(opencli user-add "$cpanel_username" generate "$email" "$plan_name" $reseller_arg --no-sentinel 2>&1)
+	local user_add_status=$?
 
     while IFS= read -r line; do
         log "$line"
     done <<< "$create_user_command"
 
-	if [ -f "/home/$cpanel_username/docker-compose.yml" ]; then
-        shadow_file="$real_backup_files_path/shadow"
-        if [ -f "$shadow_file" ]; then
-            . /usr/local/opencli/db.sh
-
-            hashed_password=$(cat "$shadow_file")
-            safe_hashed_password=$(printf "%s" "$hashed_password" | sed "s/'/''/g")
-            safe_username=$(printf "%s" "$username" | sed "s/'/''/g")
-            mysql_query="UPDATE users SET password='$safe_hashed_password' WHERE username='$safe_username';"
-            mysql --defaults-extra-file="$config_file" -D "$mysql_database" -e "$mysql_query"
-            if [ $? -eq 0 ]; then
-                echo "Imported SHA-512 crypt password hash from cpanel (will be automatically converted to pbkdf2:sha256 on first user login)"
-            else
-                echo "Failed to import SHA-512 crypt password hash from cpanel"
-            fi
-        fi       
-    else
+	# user-add can fail after it already wrote docker-compose.yml, so check its exit code and the account
+	if [ "$user_add_status" -ne 0 ] || ! id -u "$cpanel_username" >/dev/null 2>&1; then
+        cleanup
+        # last line of the log, so OpenAdmin shows the import as failed
         log "FATAL ERROR: User addition failed."
         exit 1
+    fi
+
+    shadow_file="$real_backup_files_path/shadow"
+    if [ -f "$shadow_file" ]; then
+        . /usr/local/opencli/db.sh
+
+        hashed_password=$(cat "$shadow_file")
+        safe_hashed_password=$(printf "%s" "$hashed_password" | sed "s/'/''/g")
+        safe_username=$(printf "%s" "$username" | sed "s/'/''/g")
+        mysql_query="UPDATE users SET password='$safe_hashed_password' WHERE username='$safe_username';"
+        mysql --defaults-extra-file="$config_file" -D "$mysql_database" -e "$mysql_query"
+        if [ $? -eq 0 ]; then
+            echo "Imported SHA-512 crypt password hash from cpanel (will be automatically converted to pbkdf2:sha256 on first user login)"
+        else
+            echo "Failed to import SHA-512 crypt password hash from cpanel"
+        fi
     fi
 }
 
@@ -782,9 +788,14 @@ restore_files() {
 
     du_needed_for_home=$(du -sh "$real_backup_files_path/homedir" | cut -f1)
     log "Restoring home directory ($du_needed_for_home) to html_data volume"
-    mkdir -p /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/
+    local data_dir="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data"
+    mkdir -p "$data_dir"
     rm -rf "$real_backup_files_path"/homedir/{.cpanel,.trash,wordpress-backups}
-    mv $real_backup_files_path/homedir /home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data
+    # move into the _data dir user-add made, replacing the dir would leave already started containers on the old one
+    (shopt -s dotglob nullglob; mv -- "$real_backup_files_path"/homedir/* "$data_dir"/) || rsync -a "$real_backup_files_path/homedir/" "$data_dir/"
+    # same permissions and owner user-add gives the volume
+    chmod -R g+w "$data_dir"
+    chown -R "$cpanel_username:$cpanel_username" "$data_dir"
 }
 
 # ======================================================================
@@ -818,6 +829,7 @@ restore_locale() {
         local file_path="$real_backup_files_path/cp/$cpanel_username"
     	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
 	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
+			dry_run "Would set locale:$locale_code for OpenPanel UI" && return
 			log "Setting locale:$locale_code for OpenPanel UI"
 			echo "$locale_code" > /home/$cpanel_username/locale
 		else
@@ -1129,6 +1141,7 @@ restore_cron() {
 run_custom_post_hook() {
     if [ -n "$post_hook" ]; then
         if [ -x "$post_hook" ]; then
+            dry_run "Would run post-hook script $post_hook" && return
             log "Executing post-hook script.."
             "$post_hook" "$cpanel_username"
         else
@@ -1214,7 +1227,7 @@ ftp_accounts_import() {
 	cpanel_username="$1"
     [ ! -f "$ftp_conf" ] && { log "No FTP config file not found: $ftp_conf"; return 1; }
 
-	awk '!/^#/ && !/^$/ {total++; if ($0 ~ /@/) created++} END {print "total_accounts=" (total+0); print "created_accounts=" (created+0)}' "$ftp_conf"
+	read -r total_accounts created_accounts < <(awk '!/^#/ && !/^$/ {total++; if ($0 ~ /@/) created++} END {print total+0, created+0}' "$ftp_conf")
 
 	dry_run "Would restore $created_accounts / $total_accounts FTP accounts from $ftp_conf file (system accounts are excluded)" && return
     log "INFO: Importing $created_accounts / $total_accounts FTP accounts (system accounts are excluded)"
@@ -1347,6 +1360,7 @@ restore_startdate() {
     
     if [ -n "$STARTDATE" ]; then
       human_readable_date=$(date -d @"$STARTDATE" +"%Y-%m-%d %H:%M:%S")
+      dry_run "Would set account creation date to cpanel date: $human_readable_date" && return
       log "Updating account creation date to reflect cpanel date: $human_readable_date"
       update_timestamp="UPDATE users SET registered_date = '$human_readable_date' WHERE username = '$cpanel_username';"
       mysql -e "$update_timestamp"
@@ -1402,9 +1416,9 @@ main() {
     # STEP 3. IMPORT
     locate_backup_directories                                                  # get paths from backup
     parse_cpanel_metadata                                                      # get data and configurations
-    restore_files                                                              # homedir
     create_new_user "$cpanel_username" "random" "$cpanel_email" "$plan_name"   # create user data and container
-    setquota -u $cpanel_username 0 0 0 0 /                                     # set unlimited quota while we do import!
+    dry_run "Would set unlimited quota during the import" || setquota -u $cpanel_username 0 0 0 0 /  # set unlimited quota while we do import!
+    restore_files                                                              # homedir, after user-add so /home/$cpanel_username belongs to the new user
     create_home_mountpoint                                                     # mount /var/www/html/ to /home/USERNAME 
     get_mysql_type_cnf_and_socket                                              # mysql or mariadb, path to socket and my.cnf logins
     #NOT NEEDED ON CPANEL #fix_perms                                           # fix permissions for all files
@@ -1418,7 +1432,7 @@ main() {
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
     restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
-    opencli user-quota --update $cpanel_username                               # restore quota
+    dry_run "Would restore quota" || opencli user-quota --update $cpanel_username  # restore quota
 
     # STEP 4. IMPORT ENTERPRISE FEATURES
     import_email_accounts_and_data "$cpanel_username"                          # import emails, filters, forwarders..
