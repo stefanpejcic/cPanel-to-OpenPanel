@@ -1,6 +1,7 @@
 #!/bin/bash
 pid=$$
-script_dir=$(dirname "$0")
+# absolute, the import cds into the user's home before it runs mysql/json_2_sql.py
+script_dir=$(dirname "$(readlink -f "$0")")
 timestamp="$(date +'%Y-%m-%d_%H-%M-%S')"
 start_time=$(date +%s)
 DEBUG=true
@@ -648,11 +649,12 @@ restore_mysql() {
 	local max_wait=300
 	log "Waiting for MySQL service to start... (max ${max_wait}s)"
 	waited=0
-	while ! mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" --execute="SELECT 1;" >/dev/null 2>&1; do
+	# on first start the image's entrypoint runs a temporary init server with skip_networking and stops it again, so wait for the real one
+	while [ "$(mysql --defaults-file="$mysql_cnf" --socket="$mysql_socket" -N -B --execute="SELECT @@skip_networking;" 2>/dev/null)" != "0" ]; do
 		sleep 2
 		waited=$((waited + 2))
 		if [ "$waited" -ge "$max_wait" ]; then
-			log "ERROR: $mysql_type did not respond to 'SELECT 1' after $max_wait seconds - no database or users are imported"
+			log "ERROR: $mysql_type did not finish starting after $max_wait seconds - no database or users are imported"
 			return 1
 		fi
 	done
