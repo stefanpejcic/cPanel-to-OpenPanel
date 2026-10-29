@@ -1471,4 +1471,7 @@ main() {
 
 # ======================================================================
 # ENTRYPOINT
-define_data_and_log "$@"
+# only when executed, so the functions can also be sourced without starting an import
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    define_data_and_log "$@"
+fi
