@@ -985,13 +985,29 @@ restore_wordpress() {
 restore_locale() {
     if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
         local file_path="$real_backup_files_path/cp/$cpanel_username"
-    	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+		local cpanel_locale locale_code
+		cpanel_locale=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+		[ -z "$cpanel_locale" ] && return
+
+		# custom cPanel locales are named i_<name> and their definition isn't in the backup, so use the language in the name if it has one
+		if [[ "$cpanel_locale" == i_* ]]; then
+			if [[ "$cpanel_locale" =~ ^i_([a-z]{2})([_-]|$) ]]; then
+				locale_code="${BASH_REMATCH[1]}"
+				log "'$cpanel_locale' is a custom cPanel locale, using its language: $locale_code"
+			else
+				log "Skipping user locale: '$cpanel_locale' is a custom cPanel locale with no language in its name, the account will use the server's default language"
+				return
+			fi
+		else
+			locale_code="${cpanel_locale:0:2}"
+		fi
+
 	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
 			dry_run "Would set locale:$locale_code for OpenPanel UI" && return
 			log "Setting locale:$locale_code for OpenPanel UI"
 			echo "$locale_code" > /home/$cpanel_username/locale
 		else
-			log "Skipping user locale: '$locale_code' is not available"
+			log "Skipping user locale: '$locale_code' isn't installed on this server (an admin can add it with 'opencli locale'), the account will use the server's default language"
 		fi
 	fi
 }
