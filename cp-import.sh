@@ -206,7 +206,7 @@ validate_archive_paths() {
     if [ "$extraction_command" = "unzip" ]; then
         entries=$(unzip -Z1 -- "$extraction_source" 2>>"$LOG_FILE")
     else
-        entries=$(tar -tf -- "$extraction_source" 2>>"$LOG_FILE")
+        entries=$(tar -tf "$extraction_source" 2>>"$LOG_FILE")
     fi
 
     if [ -z "$entries" ]; then
@@ -274,7 +274,7 @@ extract_cpanel_backup() {
         backup_size=$(stat -c %s "${extraction_source}")
 		zero_one_percent=$((backup_size / 1000000))
 		[ "$zero_one_percent" -le 0 ] && zero_one_percent=1
-		tar --no-absolute-names --checkpoint="$zero_one_percent" --checkpoint-action=dot -xf "$extraction_source" -C "$backup_dir" 2>>"$LOG_FILE"
+		tar --checkpoint="$zero_one_percent" --checkpoint-action=dot -xf "$extraction_source" -C "$backup_dir" 2>>"$LOG_FILE"
     fi
 
     if [ $? -eq 0 ]; then
