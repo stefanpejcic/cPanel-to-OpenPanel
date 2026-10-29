@@ -1,15 +1,15 @@
 import sys
 import re
 
-def remove_localhost_lines_and_replace_grant_usage(input_path, output_path):
+def localhost_to_any_host_and_replace_grant_usage(input_path, output_path):
     try:
         with open(input_path, 'r') as infile:
             lines = infile.readlines()
 
         with open(output_path, 'w') as outfile:
             for line in lines:
-                if 'localhost' in line:
-                    continue
+                # sites reach the database from other containers, so cPanel's localhost grants have to become %
+                line = line.replace("'@'localhost'", "'@'%'")
 
                 # Replace escaped underscores
                 line = line.replace(r'\_', '_')
@@ -22,7 +22,8 @@ def remove_localhost_lines_and_replace_grant_usage(input_path, output_path):
                         user = match.group(1)
                         host = match.group(2)
                         password = match.group(3)
-                        new_line = f"CREATE USER '{user}'@'{host}' IDENTIFIED WITH 'mysql_native_password' AS '{password}';\n"
+                        # the old server ip is also rewritten to %, so the same user can show up twice
+                        new_line = f"CREATE USER IF NOT EXISTS '{user}'@'{host}' IDENTIFIED WITH 'mysql_native_password' AS '{password}';\n"
 
                         outfile.write(new_line)
                     else:
@@ -44,4 +45,4 @@ if __name__ == "__main__":
     else:
         input_path = sys.argv[1]
         output_path = sys.argv[2]
-        remove_localhost_lines_and_replace_grant_usage(input_path, output_path)
+        localhost_to_any_host_and_replace_grant_usage(input_path, output_path)
