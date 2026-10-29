@@ -1502,7 +1502,9 @@ import_email_accounts_and_data() {
 	    shadow_file="$dir_path/shadow"
 	    if [[ -f "$shadow_file" && -s "$shadow_file" ]]; then
 	        domain=$(basename "$dir_path")
-			local store_dir="${STORE_EMAILS_IN:-/home/$cpanel_username/mail/$domain/}"
+			# without a storage location, each domain's mail is mounted from /home/<user>/mail/<domain>/
+			local store_dir="${STORE_EMAILS_IN:-/home/$cpanel_username/mail/}"
+			store_dir="${store_dir%/}/$domain/"
 	        owner=$(opencli domains-whoowns "$domain" | awk -F': ' '{print $2}')
 	        if [[ "$owner" == "$cpanel_username" ]]; then
 				# cpanel format: <user>:<sha_hash>/:<uid>::::::
@@ -1512,18 +1514,23 @@ import_email_accounts_and_data() {
 				    log "Importing mailbox: $email"
 				    opencli email-setup email add "$email" "$temp_email_password" >/dev/null 2>&1
 					# openpanel format: <user>@<domain>|{SHA512-CRYPT}<sha_hash>|<uid>
-					sed -i.bak "/^${email}|/c\\${email}|{SHA512-CRYPT}${password_hash}|${OPENPANEL_UID}" "$postfix_file"
+					sed -i "/^${email}|/c\\${email}|{SHA512-CRYPT}${password_hash}|${OPENPANEL_UID}" "$postfix_file"
 				done < "$shadow_file"
 
 				# 2. move mails
 				# openpanel stores emails in: $STORE_EMAILS_IN/<domain>/<user>
 				if [ "$mailbox_format" = "maildir" ] || [ "$mailbox_format" = "ma" ]; then
 					# cpanel stores email in: extract/<backup_filename>/homedir/mail/<domain>/<user>
-					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
-						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
-						rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$store_dir/$domain/"
+					local mail_src="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain"
+					if [ -d "$mail_src" ]; then
+						log "Restoring mailboxes to $store_dir"
+						if rsync -a --remove-source-files "$mail_src/." "$store_dir" >>"$LOG_FILE" 2>&1; then
+							find "$mail_src" -depth -type d -empty -delete
+						else
+							log "WARNING: Failed moving some messages to $store_dir, the rest are still in /var/www/html/mail/$domain/"
+						fi
 					else
-						log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
+						log "No mailboxes to restore for $domain: mail/$domain/ is not in the backup"
 					fi
 				else
 					log "WARNING: messages will not be moved due to unsupported mailbox format: $mailbox_format. More info on how to convert to maildir: https://docs.cpanel.net/whm/email/mailbox-conversion/"
