@@ -280,6 +280,12 @@ extract_cpanel_backup() {
 
     if [ $? -eq 0 ]; then
         log "Backup extracted successfully."
+        # pkgacct names the top folder after the file, but some archives (JetBackup downloads) use the bare username
+        if [ ! -d "$real_backup_files_path/cp" ]; then
+            local found_dir
+            found_dir=$(find "$backup_dir" -mindepth 2 -maxdepth 2 -type d -name cp -printf '%h\n' | head -n 1)
+            [ -n "$found_dir" ] && real_backup_files_path="$found_dir"
+        fi
         log "Extracted backup folder: $real_backup_files_path"
         [ -n "$raw_tar_file" ] && rm -f "$raw_tar_file"
     else
