@@ -280,6 +280,12 @@ extract_cpanel_backup() {
 
     if [ $? -eq 0 ]; then
         log "Backup extracted successfully."
+        # pkgacct names the top folder after the file, but some archives (JetBackup downloads) use the bare username
+        if [ ! -d "$real_backup_files_path/cp" ]; then
+            local found_dir
+            found_dir=$(find "$backup_dir" -mindepth 2 -maxdepth 2 -type d -name cp -printf '%h\n' | head -n 1)
+            [ -n "$found_dir" ] && real_backup_files_path="$found_dir"
+        fi
         log "Extracted backup folder: $real_backup_files_path"
         [ -n "$raw_tar_file" ] && rm -f "$raw_tar_file"
     else
@@ -697,42 +703,174 @@ restore_ssl() {
 
     dry_run "Would restore SSL certificates for user $username" && return
 
-    # TODO: edit to cover certs/ keys/ 
     log "Restoring SSL certificates"
-    # apache_tls/ dir has LE certs, custom are in ssl/
-    if [ -d "$real_backup_files_path/ssl" ]; then
-        dest_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/"
-		shopt -s nullglob
-        for cert_file in "$real_backup_files_path/ssl"/*.crt; do
-            local domain=$(basename "$cert_file" .crt)
-            local key_file="$real_backup_files_path/ssl/$domain.key"
-            local new_cert_file="$dest_dir/$domain.crt"
-            local new_key_file="$dest_dir/$domain.key"
-            if [ -f "$key_file" ]; then
-                cp "$key_file" "$new_key_file"
-                cp "$cert_file" "$new_cert_file"         
-			    if [[ "$domain" == *.cpanel.site ]]; then
-			        echo "Skipping cPanel temporary domain: $domain"
-			        continue
-			    fi
-				log "Installing SSL certificate for domain: $domain"
-                opencli domains-ssl "$domain" custom "/var/www/html/$domain.key" "/var/www/html/$domain.crt"
-				rm -rf "$new_cert_file" "$new_key_file"
-            else
-                log "SSL key file not found for domain: $domain"
-            fi
-        done
-
-        nohup podman exec caddy caddy reload --config /etc/caddy/Caddyfile > /dev/null 2>&1 &
-        disown
-
-    else
+    # cPanel keeps each installed certificate in apache_tls/<domain>: the key, the certificate and its CA chain in one file
+    local tls_dir="$real_backup_files_path/apache_tls"
+    if [ ! -d "$tls_dir" ]; then
         log "No SSL certificates found to restore"
+        return
     fi
+
+    local data_dir="/home/$username/docker-data/volumes/${username}_html_data/_data"
+    local pem domain cert_file key_file issuer subject name output installed=0
+    for pem in "$tls_dir"/*; do
+        [ -f "$pem" ] || continue
+        domain=$(basename "$pem")
+        if [[ "$domain" == *.cpanel.site ]]; then
+            log "Skipping cPanel temporary domain: $domain"
+            continue
+        fi
+        if [ "$(opencli domains-whoowns "$domain" 2>/dev/null | awk -F': ' '{print $2}')" != "$username" ]; then
+            log "Skipping SSL for $domain: the domain wasn't added to this account"
+            continue
+        fi
+
+        cert_file=$(mktemp)
+        key_file=$(mktemp)
+        awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' "$pem" > "$cert_file"
+        awk '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/' "$pem" > "$key_file"
+        issuer=$(openssl x509 -in "$cert_file" -noout -issuer 2>/dev/null)
+        subject=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null)
+
+        # Caddy issues its own certificates, so only bring over ones it can't replace: valid, not self-signed, not from an automatic CA
+        if [ ! -s "$key_file" ] || [ -z "$issuer" ]; then
+            log "Skipping SSL for $domain: no certificate and key found in apache_tls/$domain"
+        elif ! openssl x509 -in "$cert_file" -noout -checkend 0 >/dev/null 2>&1; then
+            log "Skipping SSL for $domain: the certificate has expired, a new one will be issued automatically"
+        elif [ "${issuer#issuer=}" = "${subject#subject=}" ]; then
+            log "Skipping SSL for $domain: self-signed certificate, a new one will be issued automatically"
+        elif echo "$issuer" | grep -qiE "cPanel|Let'?s Encrypt|ZeroSSL"; then
+            log "Skipping SSL for $domain: AutoSSL certificate (${issuer#issuer=}), a new one will be issued automatically"
+        else
+            # domains-ssl only reads the files from the account's /var/www/html/
+            name=".cpanel-import-ssl-$domain"
+            install -m 600 -o "$username" -g "$username" "$cert_file" "$data_dir/$name.crt"
+            install -m 600 -o "$username" -g "$username" "$key_file" "$data_dir/$name.key"
+            log "Installing custom SSL certificate for $domain (${issuer#issuer=})"
+            output=$(opencli domains-ssl "$domain" custom "/var/www/html/$name.crt" "/var/www/html/$name.key" 2>&1)
+            while IFS= read -r line; do
+                log "$line"
+            done <<< "$output"
+            rm -f "$data_dir/$name.crt" "$data_dir/$name.key"
+            installed=$((installed + 1))
+        fi
+        rm -f "$cert_file" "$key_file"
+    done
+
+    log "Installed $installed custom SSL certificate(s)"
+}
+
+# ======================================================================
+# ACCESS LOGS
+# OpenPanel's access logs are Caddy's own, so cPanel's Apache domlogs are kept as files next to the monthly archives cPanel leaves in logs/
+restore_domlogs() {
+    local username="$1"
+
+    dry_run "Would save cPanel access logs to logs/cpanel-domlogs/ in the account's files" && return
+
+    local src="$real_backup_files_path/logs"
+    local logs_dir="/home/$username/docker-data/volumes/${username}_html_data/_data/logs"
+    local log_file copied=0
+    for log_file in "$src"/*; do
+        if [ ! -f "$log_file" ] || [ ! -s "$log_file" ]; then
+            continue
+        fi
+        # bytes_log is cPanel's bandwidth counter, not an access log
+        [[ "$log_file" == *-bytes_log ]] && continue
+        mkdir -p "$logs_dir/cpanel-domlogs"
+        gzip -c "$log_file" > "$logs_dir/cpanel-domlogs/$(basename "$log_file").gz"
+        copied=$((copied + 1))
+    done
+
+    if [ "$copied" -eq 0 ]; then
+        log "No access logs found to restore"
+        return
+    fi
+    chown "$username:$username" "$logs_dir"
+    chown -R "$username:$username" "$logs_dir/cpanel-domlogs"
+    log "Saved $copied cPanel access log(s) to logs/cpanel-domlogs/ in the account's files"
 }
 
 # ======================================================================
 # DNS ZONES
+# prints OpenPanel's SOA and apex NS, every other record from the cPanel zone, then OpenPanel's defaults only for names cPanel has nothing for
+merge_dns_zone() {
+    local zone="${1%.}." cpanel_zone="$2" openpanel_zone="$3"
+    awk -v zone="$zone" '
+        function fqdn(name) {
+            name = tolower(name)
+            if (name == "@") return origin
+            if (name ~ /\.$/) return name
+            return name "." origin
+        }
+        function rrtype(text,    tokens, n, i, t) {
+            n = split(text, tokens, /[ \t\n()]+/)
+            for (i = 1; i <= n; i++) {
+                t = toupper(tokens[i])
+                if (t ~ /^(A|AAAA|CAA|CNAME|DNAME|DS|HINFO|MX|NAPTR|NS|PTR|SOA|SPF|SRV|SSHFP|TLSA|TXT)$/) return t
+            }
+            return ""
+        }
+        FNR == 1 { file++; origin = tolower(zone); owner = origin; depth = 0 }
+        {
+            line = $0
+            # parens and ; only count outside quoted strings
+            bare = line
+            gsub(/"([^"\\]|\\.)*"/, "\"\"", bare)
+            sub(/;.*/, "", bare)
+            if (depth == 0) {
+                if (bare ~ /^[ \t]*$/) next
+                if (bare ~ /^\$/) {
+                    split(bare, d, /[ \t]+/)
+                    if (toupper(d[1]) == "$TTL") ttl[file] = "$TTL " d[2]
+                    if (toupper(d[1]) == "$ORIGIN") origin = fqdn(d[2])
+                    next
+                }
+                rec = line; rest = bare
+                if (line ~ /^[ \t]/) {
+                    blank_owner = 1
+                } else {
+                    blank_owner = 0
+                    match(bare, /^[^ \t]+/)
+                    owner = fqdn(substr(bare, 1, RLENGTH))
+                    rest = substr(bare, RLENGTH + 1)
+                }
+            } else {
+                rec = rec "\n" line; rest = rest "\n" bare
+            }
+            depth += gsub(/\(/, "(", bare) - gsub(/\)/, ")", bare)
+            if (depth > 0) next
+            depth = 0
+            # every record gets its full owner name, so dropping one never hands its owner to the next
+            if (blank_owner) rec = owner rec
+            else { match(rec, /^[^ \t]+/); rec = owner substr(rec, RLENGTH + 1) }
+            i = ++count[file]
+            text[file, i] = rec; own[file, i] = owner; type[file, i] = rrtype(rest)
+        }
+        END {
+            apex = tolower(zone)
+            print (ttl[2] != "" ? ttl[2] : "$TTL 14400")
+            for (i = 1; i <= count[2]; i++)
+                if (type[2, i] == "SOA" || (type[2, i] == "NS" && own[2, i] == apex)) print text[2, i]
+            print ""
+            print "$ORIGIN " apex
+            if (ttl[1] != "") print ttl[1]
+            for (i = 1; i <= count[1]; i++) {
+                if (type[1, i] == "SOA" || (type[1, i] == "NS" && own[1, i] == apex)) continue
+                print text[1, i]
+                has[own[1, i]] = 1
+            }
+            print ""
+            if (ttl[2] != "") print ttl[2]
+            for (i = 1; i <= count[2]; i++) {
+                if (type[2, i] == "SOA" || (type[2, i] == "NS" && own[2, i] == apex)) continue
+                if (own[2, i] in has) continue
+                print text[2, i]
+            }
+        }
+    ' "$cpanel_zone" "$openpanel_zone"
+}
+
 restore_dns_zones() {
     log "Restoring DNS zones"
 
@@ -756,16 +894,28 @@ restore_dns_zones() {
             if [ -z "$old_ip" ]; then
                 log "WARNING: old server ip address not detected in file ${real_backup_files_path}/cp/$cpanel_username - records will not be automatically updated to new ip address."
             else
-                sed -i "s/$old_ip/$new_ip/g" $zone_file
+                # whole addresses only, so an old IP like 1.2.3.4 doesn't also rewrite 1.2.3.45
+                sed -i -E "s/(^|[^0-9.])${old_ip//./\\.}([^0-9.]|$)/\1${new_ip}\2/g" "$zone_file"
             fi
-            temp_file_of_original_zone=$(mktemp)
-            temp_file_of_created_zone=$(mktemp)
 
-            awk '/^@/ { found=1; last_line=NR } { if (found && NR > last_line) exit } { print }' "$zone_file" > "$temp_file_of_original_zone"
-            awk '/NS/ { found=1; next } found { print }' "/etc/bind/zones/${zone_name}.zone" > "$temp_file_of_created_zone"
-            cat "$temp_file_of_created_zone" >> "$temp_file_of_original_zone"
-            mv "$temp_file_of_original_zone" "/etc/bind/zones/${zone_name}.zone"
-            rm "$temp_file_of_created_zone"
+            local live_zone="/etc/bind/zones/${zone_name}.zone"
+            local merged_zone="${live_zone}.import"
+            merge_dns_zone "$zone_name" "$zone_file" "$live_zone" > "$merged_zone"
+
+            # bind refuses a whole zone over one bad record, so only install what it accepts and keep OpenPanel's zone otherwise
+            local check_output check_status
+            check_output=$(podman exec openpanel_dns named-checkzone "$zone_name" "$merged_zone" 2>&1)
+            check_status=$?
+            if [ "$check_status" -eq 1 ]; then
+                log "WARNING: imported DNS zone for $zone_name doesn't load in BIND ($(echo "$check_output" | head -1)), keeping OpenPanel's default zone"
+                rm -f "$merged_zone"
+                continue
+            elif [ "$check_status" -ne 0 ]; then
+                log "WARNING: couldn't check the imported DNS zone for $zone_name, the DNS service isn't running"
+            fi
+            # write into the existing file so it keeps the owner and mode BIND reads it with
+            cat "$merged_zone" > "$live_zone"
+            rm -f "$merged_zone"
 
             opencli domains-update_ns ${zone_name} >/dev/null 2>&1
             log "DNS zone file for $zone_name has been imported."
@@ -835,13 +985,29 @@ restore_wordpress() {
 restore_locale() {
     if [ -f "$real_backup_files_path/cp/$cpanel_username" ]; then
         local file_path="$real_backup_files_path/cp/$cpanel_username"
-    	local locale_code=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+		local cpanel_locale locale_code
+		cpanel_locale=$(grep '^LOCALE=' "$file_path" | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+		[ -z "$cpanel_locale" ] && return
+
+		# custom cPanel locales are named i_<name> and their definition isn't in the backup, so use the language in the name if it has one
+		if [[ "$cpanel_locale" == i_* ]]; then
+			if [[ "$cpanel_locale" =~ ^i_([a-z]{2})([_-]|$) ]]; then
+				locale_code="${BASH_REMATCH[1]}"
+				log "'$cpanel_locale' is a custom cPanel locale, using its language: $locale_code"
+			else
+				log "Skipping user locale: '$cpanel_locale' is a custom cPanel locale with no language in its name, the account will use the server's default language"
+				return
+			fi
+		else
+			locale_code="${cpanel_locale:0:2}"
+		fi
+
 	    if [ "$locale_code" = "en" ] || [ -d "/etc/openpanel/openpanel/translations/$locale_code" ]; then
 			dry_run "Would set locale:$locale_code for OpenPanel UI" && return
 			log "Setting locale:$locale_code for OpenPanel UI"
 			echo "$locale_code" > /home/$cpanel_username/locale
 		else
-			log "Skipping user locale: '$locale_code' is not available"
+			log "Skipping user locale: '$locale_code' isn't installed on this server (an admin can add it with 'opencli locale'), the account will use the server's default language"
 		fi
 	fi
 }
@@ -1005,7 +1171,9 @@ restore_domains() {
 			local addon_userdata_file="$real_backup_files_path/userdata/$domain.$main_domain"
 			file_to_use="$userdata_file"
 			[ ! -f "$file_to_use" ] && [ -f "$addon_userdata_file" ] && file_to_use="$addon_userdata_file"
-			
+			# cPanel keeps no userdata for parked (alias) domains, they serve the main domain's docroot
+			[ ! -f "$file_to_use" ] && [ "$type" = "alias domain" ] && file_to_use="$real_backup_files_path/userdata/$main_domain"
+
 			docroot=""
 			if [ -f "$file_to_use" ]; then
 				original_docroot=$(awk -F': ' '/^documentroot:/ {print $2}' "$file_to_use" | xargs)
@@ -1090,36 +1258,54 @@ restore_cron() {
     dry_run "Would restore cron jobs for user $cpanel_username" && return
 
     if [ -f "$real_backup_files_path/cron/$cpanel_username" ]; then
-        sed -i '1,2d' "$real_backup_files_path/cron/$cpanel_username"
         ofelia_cron_path="/home/${cpanel_username}/crons.ini"
         > "$ofelia_cron_path"
 
+        # PHP jobs run in the account's own PHP container, cPanel's version names (ea-php81, native) don't exist here
+        local default_php php_container
+        default_php=$(grep -E '^DEFAULT_PHP_VERSION=' "/home/$cpanel_username/.env" | cut -d= -f2 | tr -d '"[:space:]')
+        php_container="php-fpm-${default_php#php}"
+
         job_index=1
         job_found=false
+        local active_found=false
         while IFS= read -r cron_line; do
-            [[ -z "$cron_line" || "$cron_line" =~ ^# ]] && continue
+            [[ -z "${cron_line//[[:space:]]/}" || "$cron_line" =~ ^[[:space:]]*# ]] && continue
+            # crontab settings like MAILTO= or SHELL= aren't jobs
+            [[ "$cron_line" =~ ^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*= ]] && continue
 
+            # ofelia reads a seconds field first, so a plain "*" there would run the job every second of its minute
+            if [[ "$cron_line" =~ ^[[:space:]]*@ ]]; then
+                schedule=$(awk '{print $1}' <<< "$cron_line")
+                command=$(sed -E 's/^[[:space:]]*[^[:space:]]+[[:space:]]+//' <<< "$cron_line")
+                if [ "$schedule" = "@reboot" ]; then
+                    log "Skipping @reboot cron job, the cron service can't run it: $command"
+                    continue
+                fi
+            else
+                schedule="0 $(awk '{print $1, $2, $3, $4, $5}' <<< "$cron_line")"
+                command=$(sed -E 's/^[[:space:]]*([^[:space:]]+[[:space:]]+){5}//' <<< "$cron_line")
+            fi
             job_found=true
-            schedule="* $(echo "$cron_line" | awk '{print $1, $2, $3, $4, $5}')"
-            command=$(echo "$cron_line" | cut -d' ' -f6-)
 
             if [[ "$command" == *mysql* || "$command" == *mariadb* ]]; then
                 container_name="$mysql_type"
                 comment_prefix=""
             elif [[ "$command" == *php* ]]; then
-                container_name="php-fpm-$php_version"
+                container_name="$php_container"
                 comment_prefix=""
             else
-                container_name=""
-                comment_prefix="# "
+                # anything else comes in disabled, the same way OpenPanel saves a disabled job, so it can be checked and turned on there
+                container_name="$php_container"
+                comment_prefix="#"
+                log "Imported cron job as disabled, check it and enable it in OpenPanel: $command"
             fi
+            [ -z "$comment_prefix" ] && active_found=true
 
             {
                 echo "${comment_prefix}[job-exec \"${cpanel_username}_job_$job_index\"]"
                 echo "${comment_prefix}schedule = $schedule"
-                if [[ -n "$container_name" ]]; then
-                    echo "${comment_prefix}container = $container_name"
-                fi
+                echo "${comment_prefix}container = $container_name"
                 echo "${comment_prefix}command = $command"
                 echo
             } >> "$ofelia_cron_path"
@@ -1127,7 +1313,9 @@ restore_cron() {
             ((job_index++))
         done < "$real_backup_files_path/cron/$cpanel_username"
 
-        if [ "$job_found" = true ]; then
+        if [ "$job_found" = true ] && [ "$active_found" = false ]; then
+            log "Converted crontab to Ofelia config at: $ofelia_cron_path, all jobs disabled so the cron service isn't started"
+        elif [ "$job_found" = true ]; then
             log "Converted crontab to Ofelia config at: $ofelia_cron_path"
             log "Starting Cron service"
             output=$(cd /home/$cpanel_username && CONTAINER_HOST=unix:///hostfs/run/user/$(id -u $cpanel_username)/podman/podman.sock podman-compose up -d cron >/dev/null 2>&1)           
@@ -1330,7 +1518,9 @@ import_email_accounts_and_data() {
 	    shadow_file="$dir_path/shadow"
 	    if [[ -f "$shadow_file" && -s "$shadow_file" ]]; then
 	        domain=$(basename "$dir_path")
-			local store_dir="${STORE_EMAILS_IN:-/home/$cpanel_username/mail/$domain/}"
+			# without a storage location, each domain's mail is mounted from /home/<user>/mail/<domain>/
+			local store_dir="${STORE_EMAILS_IN:-/home/$cpanel_username/mail/}"
+			store_dir="${store_dir%/}/$domain/"
 	        owner=$(opencli domains-whoowns "$domain" | awk -F': ' '{print $2}')
 	        if [[ "$owner" == "$cpanel_username" ]]; then
 				# cpanel format: <user>:<sha_hash>/:<uid>::::::
@@ -1340,18 +1530,23 @@ import_email_accounts_and_data() {
 				    log "Importing mailbox: $email"
 				    opencli email-setup email add "$email" "$temp_email_password" >/dev/null 2>&1
 					# openpanel format: <user>@<domain>|{SHA512-CRYPT}<sha_hash>|<uid>
-					sed -i.bak "/^${email}|/c\\${email}|{SHA512-CRYPT}${password_hash}|${OPENPANEL_UID}" "$postfix_file"
+					sed -i "/^${email}|/c\\${email}|{SHA512-CRYPT}${password_hash}|${OPENPANEL_UID}" "$postfix_file"
 				done < "$shadow_file"
 
 				# 2. move mails
 				# openpanel stores emails in: $STORE_EMAILS_IN/<domain>/<user>
 				if [ "$mailbox_format" = "maildir" ] || [ "$mailbox_format" = "ma" ]; then
 					# cpanel stores email in: extract/<backup_filename>/homedir/mail/<domain>/<user>
-					if [ -d "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/$username" ]; then
-						log "Restoring mailboxes to $STORE_EMAILS_IN/$domain/"
-						rsync -av --remove-source-files "/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain/." "$store_dir/$domain/"
+					local mail_src="/home/$cpanel_username/docker-data/volumes/${cpanel_username}_html_data/_data/mail/$domain"
+					if [ -d "$mail_src" ]; then
+						log "Restoring mailboxes to $store_dir"
+						if rsync -a --remove-source-files "$mail_src/." "$store_dir" >>"$LOG_FILE" 2>&1; then
+							find "$mail_src" -depth -type d -empty -delete
+						else
+							log "WARNING: Failed moving some messages to $store_dir, the rest are still in /var/www/html/mail/$domain/"
+						fi
 					else
-						log "Failed restoring mailbox to $STORE_EMAILS_IN - $base_dir/mail/$domain/$username does not exist"
+						log "No mailboxes to restore for $domain: mail/$domain/ is not in the backup"
 					fi
 				else
 					log "WARNING: messages will not be moved due to unsupported mailbox format: $mailbox_format. More info on how to convert to maildir: https://docs.cpanel.net/whm/email/mailbox-conversion/"
@@ -1445,6 +1640,7 @@ main() {
 	restore_psql "$psqldir"                                                    # postgresql databases, users and grants
     restore_cron                                                               # cronjob
     restore_ssl "$cpanel_username"                                             # ssl certs
+    restore_domlogs "$cpanel_username"                                         # apache access logs, kept as files
     restore_wordpress "$real_backup_files_path" "$cpanel_username"             # import wp sites to sitemanager
     restore_notifications "$real_backup_files_path" "$cpanel_username"         # notification preferences from cp
     restore_startdate "$real_backup_files_path" "$cpanel_username"             # cp account creation date
